@@ -1,0 +1,25 @@
+# DB
+data.db
+*.db
+
+# Streamlit secrets（もし作るなら）
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# backups / temp
+*.bak
+*.save
+*~*
+*.txt
+
+# reports (generated)
+reports/
+_private/
