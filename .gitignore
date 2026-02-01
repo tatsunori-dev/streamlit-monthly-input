@@ -23,3 +23,5 @@ venv/
 # reports (generated)
 reports/
 _private/
+
+!requirements.txt
