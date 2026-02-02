@@ -5,9 +5,9 @@
 - このリポジトリを clone 済み
 
 ## 起動（3行）
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt && streamlit run app.py
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt && streamlit run app.py
 
 ## 停止
 - ターミナルで `Ctrl + C`
@@ -15,12 +15,20 @@ pip install -r requirements.txt && streamlit run app.py
 ## 反映されない時
 - `Ctrl + C` で止めて、もう一度 `streamlit run app.py`
 
-# Git差分チェック（置換漏れがないか確認）
-cd ~/Desktop/python_practice
-git diff
+---
 
-# 決定版をGitHubへ反映（add→commit→push）
-cd ~/Desktop/python_practice
-git add docs/DEPLOY_RAILWAY.md docs/DEV.md README.md
-git commit -m "update docs"
-git push
+## Git差分チェック（置換漏れがないか確認）
+    cd ~/Desktop/python_practice
+    git diff
+
+## 決定版をGitHubへ反映（add→commit→push）
+    cd ~/Desktop/python_practice
+    git add docs/DEPLOY_RAILWAY.md docs/DEV.md README.md
+    git commit -m "update docs"
+    git push
+
+---
+
+## メモ（任意）
+- `.venv/` は Git 管理しない（`.gitignore` に入っていればOK）
+- `pip freeze > requirements.txt` は依存関係を追加した時だけやればOK
