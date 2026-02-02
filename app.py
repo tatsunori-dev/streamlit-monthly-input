@@ -38,7 +38,8 @@ def on_client_change():
     ensure_clients_map()
     c = st.session_state.get("client_sel", CLIENT_COLS[0])
     st.session_state["client_amount"] = int(st.session_state["clients_map"].get(c, 0) or 0)
-   
+    st.session_state["client_amount_text"] = "" if not st.session_state.get("client_amount") else str(st.session_state["client_amount"])
+
 def on_amount_change():
     ensure_clients_map()
     c = st.session_state.get("client_sel", CLIENT_COLS[0])
@@ -295,7 +296,9 @@ def on_date_change():
 st.subheader("日付時間入力")
 st.caption("同日なら上書き保存")
 
-d = st.date_input("日付", value=st.session_state.get("d", date.today()), key="d", on_change=on_date_change)
+if "d" not in st.session_state:
+    st.session_state["d"] = date.today()
+d = st.date_input("日付", key="d", on_change=on_date_change)
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -312,30 +315,89 @@ ensure_clients_map()
 st.markdown("### 取引先入力")
 st.caption("ボタンで選択+金額直接入力")
 
+# （任意）「その他」だけ折り返してデカくなるのを防ぐ
+st.markdown(
+    """
+<style>
+/* ボタン内の文字を折り返さない（高さが揃いやすい） */
+div[data-baseweb="button"] button { white-space: nowrap; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+# 2段に分割（Afrex以降を下段）
+CLIENT_ROW1 = ["U", "出", "R", "W", "menu", "しょんぴ"]
+CLIENT_ROW2 = ["Afrex","Afresh", "ハコベル", "pickg", "その他"]
+
+# 初期化（ウィジェット生成前）
+if "client_sel_row1" not in st.session_state:
+    st.session_state["client_sel_row1"] = "U"
+if "client_sel_row2" not in st.session_state:
+    st.session_state["client_sel_row2"] = None
+
+def on_row1_change():
+    sel1 = st.session_state.get("client_sel_row1")
+    if sel1:
+        st.session_state["client_sel"] = sel1
+        st.session_state["client_sel_row2"] = None
+        on_client_change()
+
+def on_row2_change():
+    sel2 = st.session_state.get("client_sel_row2")
+    if sel2:
+        st.session_state["client_sel"] = sel2
+        st.session_state["client_sel_row1"] = None
+        on_client_change()
+
 cA, cB = st.columns([2, 3])
 
 with cA:
     st.pills(
-        "取引先",
-        CLIENT_COLS,
-        key="client_sel",
+        "取引先（上段）",
+        CLIENT_ROW1,
+        key="client_sel_row1",
         selection_mode="single",
-        default="U",
-        on_change=on_client_change,
         label_visibility="collapsed",
         width="stretch",
+        on_change=on_row1_change,
     )
+
+    st.pills(
+        "取引先（下段）",
+        CLIENT_ROW2,
+        key="client_sel_row2",
+        selection_mode="single",
+        label_visibility="collapsed",
+        width="stretch",
+        on_change=on_row2_change,
+    )
+
+    # 念のため：client_sel が未定なら U に戻す
+    if "client_sel" not in st.session_state or st.session_state["client_sel"] is None:
+        st.session_state["client_sel"] = "U"
+        on_client_change()
 
 with cB:
     if "client_amount" not in st.session_state:
         on_client_change()
 
-    st.number_input(
+    # 表示用テキスト（初回だけ同期）
+    if "client_amount_text" not in st.session_state:
+        v = st.session_state.get("client_amount")
+        st.session_state["client_amount_text"] = "" if not v else str(v)
+
+    def on_amount_text_change():
+        s = st.session_state.get("client_amount_text", "")
+        num = int("".join(ch for ch in s if ch.isdigit()) or 0)
+        st.session_state["client_amount"] = num
+        on_amount_change()
+
+    st.text_input(
         "金額（円）",
-        min_value=0,
-        step=1,
-        key="client_amount",
-        on_change=on_amount_change,
+        key="client_amount_text",
+        placeholder="例: 12000",
+        on_change=on_amount_text_change,
     )
 
 # ★保険：毎回 clients_map に同期（スマホで on_change が走らないケース対策）
