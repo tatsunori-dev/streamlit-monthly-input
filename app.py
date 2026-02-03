@@ -1,3 +1,6 @@
+import os, sys
+sys.stderr.write(f"[BOOT] PORT={os.getenv('PORT')} SUPABASE_DB_URL={bool(os.getenv('SUPABASE_DB_URL'))}\n")
+sys.stderr.flush()
 import streamlit as st
 import pandas as pd
 import sqlite3
