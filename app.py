@@ -1,5 +1,5 @@
 import os, sys
-sys.stderr.write(f"[BOOT] PORT={os.getenv('PORT')} SUPABASE_DB_URL={bool(os.getenv('SUPABASE_DB_URL'))}\n")
+sys.stderr.write(f"[BOOT] PORT={os.getenv('PORT')} SUPABASE_DB_URL={bool(os.getenv('SUPABASE_DB_URL'))} DATABASE_URL={bool(os.getenv('DATABASE_URL'))}\n")
 sys.stderr.flush()
 import streamlit as st
 import pandas as pd
@@ -49,18 +49,7 @@ def on_amount_change():
     v = int(st.session_state.get("client_amount", 0) or 0)
     st.session_state["clients_map"][c] = v
 
-import os
 import psycopg2
-
-print("[RAILWAY] PORT =", os.getenv("PORT"), flush=True)
-print("[RAILWAY] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")), flush=True)
-
-# -----------------------------
-# DB backend debug (Railway Logsで確認用)
-# -----------------------------
-print("[DB] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")))
-print("[DB] DATABASE_URL set    =", bool(os.getenv("DATABASE_URL")))
-print("[DB] backend             =", "postgres" if (os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")) else "sqlite")
 
 # -----------------------------
 # DB backend switch
@@ -123,10 +112,8 @@ def init_db():
     finally:
         pcon.close()
 
-# ✅ ここ（init_db() の直後 / load_df() の直前）
-print("[DB] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")), flush=True)
-print("[DB] DATABASE_URL set    =", bool(os.getenv("DATABASE_URL")), flush=True)
-print("[DB] backend             =", "postgres" if _use_postgres() else "sqlite", flush=True)
+sys.stderr.write(f"[DB] backend={'postgres' if _use_postgres() else 'sqlite'}\n")
+sys.stderr.flush()
 
 def load_df() -> pd.DataFrame:
     init_db()
@@ -377,7 +364,7 @@ if "fresh_h_s" not in st.session_state:
 # -----------------------------
 # UI
 # -----------------------------
-st.markdown("## 月次入力（SQLite）")
+st.markdown(f"## 月次入力（{'Postgres' if _use_postgres() else 'SQLite'}）")
 df = load_df()
 # -----------------------------
 # 初回だけ：日付(d)の行を読み込んで session_state を先に埋める（ウィジェット生成前）
