@@ -49,6 +49,9 @@ def on_amount_change():
 import os
 import psycopg2
 
+print("[RAILWAY] PORT =", os.getenv("PORT"), flush=True)
+print("[RAILWAY] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")), flush=True)
+
 # -----------------------------
 # DB backend debug (Railway Logsで確認用)
 # -----------------------------
