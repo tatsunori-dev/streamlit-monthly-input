@@ -46,28 +46,88 @@ def on_amount_change():
     v = int(st.session_state.get("client_amount", 0) or 0)
     st.session_state["clients_map"][c] = v
 
+import os
+import psycopg2
+
 # -----------------------------
-# DB
+# DB backend switch
+#   - SUPABASE_DB_URL(or DATABASE_URL) があれば Postgres
+#   - なければ SQLite
 # -----------------------------
+def _pg_url() -> str | None:
+    url = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+    if not url:
+        return None
+
+    # sslmode を安全側で付与（既にあればそのまま）
+    if "sslmode=" not in url:
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    return url
+
+def _use_postgres() -> bool:
+    return _pg_url() is not None
+
 def get_conn():
+    """SQLite connection (local fallback)"""
     return sqlite3.connect(DB_PATH)
 
+def _pg_connect():
+    url = _pg_url()
+    if not url:
+        raise RuntimeError("SUPABASE_DB_URL (or DATABASE_URL) が未設定だよ")
+    return psycopg2.connect(url)
+
 def init_db():
+    """SQLite/Postgres ともにテーブルが無ければ作る"""
     cols_sql = ", ".join([f'"{c}" TEXT' for c in COLUMNS])
-    with get_conn() as con:
-        con.execute(f'''
-            CREATE TABLE IF NOT EXISTS {TABLE} (
-                {cols_sql},
-                PRIMARY KEY ("日付")
-            )
-        ''')
-        con.commit()
+
+    if not _use_postgres():
+        with get_conn() as con:
+            con.execute(f'''
+                CREATE TABLE IF NOT EXISTS {TABLE} (
+                    {cols_sql},
+                    PRIMARY KEY ("日付")
+                )
+            ''')
+            con.commit()
+        return
+
+    # Postgres: 全カラム TEXT / PKは日付
+    col_defs = []
+    for c in COLUMNS:
+        if c == "日付":
+            col_defs.append(f'"{c}" TEXT PRIMARY KEY')
+        else:
+            col_defs.append(f'"{c}" TEXT')
+
+    create_sql = f'CREATE TABLE IF NOT EXISTS "{TABLE}" (\n  ' + ",\n  ".join(col_defs) + "\n);"
+
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(create_sql)
+        pcon.commit()
+    finally:
+        pcon.close()
 
 def load_df() -> pd.DataFrame:
     init_db()
-    with get_conn() as con:
-        df = pd.read_sql_query(f'SELECT * FROM {TABLE}', con)
 
+    if not _use_postgres():
+        with get_conn() as con:
+            df = pd.read_sql_query(f'SELECT * FROM {TABLE}', con)
+    else:
+        pcon = _pg_connect()
+        try:
+            with pcon.cursor() as cur:
+                cur.execute(f'SELECT * FROM "{TABLE}";')
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+            df = pd.DataFrame(rows, columns=cols)
+        finally:
+            pcon.close()
+
+    # 欠けカラム補完 & 並び統一
     for c in COLUMNS:
         if c not in df.columns:
             df[c] = ""
@@ -76,50 +136,113 @@ def load_df() -> pd.DataFrame:
     if not df.empty:
         df["_sort"] = pd.to_datetime(df["日付"], errors="coerce")
         df = df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+
     return df
 
 def load_row(date_key: str) -> dict | None:
     init_db()
-    with get_conn() as con:
-        cur = con.execute(f'SELECT * FROM {TABLE} WHERE "日付" = ? LIMIT 1', (date_key,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        cols = [d[0] for d in cur.description]
-        data = dict(zip(cols, row))
-        for c in COLUMNS:
-            data.setdefault(c, "")
-        return data
+
+    if not _use_postgres():
+        with get_conn() as con:
+            cur = con.execute(f'SELECT * FROM {TABLE} WHERE "日付" = ? LIMIT 1', (date_key,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            cols = [d[0] for d in cur.description]
+    else:
+        pcon = _pg_connect()
+        try:
+            with pcon.cursor() as cur:
+                cur.execute(f'SELECT * FROM "{TABLE}" WHERE "日付" = %s LIMIT 1;', (date_key,))
+                row = cur.fetchone()
+                if not row:
+                    return None
+                cols = [d[0] for d in cur.description]
+        finally:
+            pcon.close()
+
+    data = dict(zip(cols, row))
+    for c in COLUMNS:
+        data.setdefault(c, "")
+    return data
 
 def upsert_row(row: dict) -> int:
     init_db()
-    cols = COLUMNS
-    placeholders = ", ".join(["?"] * len(cols))
-    colnames = ", ".join([f'"{c}"' for c in cols])
-    update_set = ", ".join([f'"{c}"=excluded."{c}"' for c in cols if c != "日付"])
-    values = [row.get(c, "") for c in cols]
 
-    with get_conn() as con:
-        cur = con.execute(
-            f'''
-            INSERT INTO {TABLE} ({colnames})
-            VALUES ({placeholders})
-            ON CONFLICT("日付") DO UPDATE SET
-            {update_set}
-            ''',
-            values
-        )
-        con.commit()
-        return cur.rowcount
+    cols = COLUMNS
+    values = []
+    for c in cols:
+        v = row.get(c, "")
+        # Postgres TEXTへ寄せる（数字/float/None/"" ぜんぶOK）
+        if v is None:
+            values.append("")
+        else:
+            values.append(str(v))
+
+    if not _use_postgres():
+        placeholders = ", ".join(["?"] * len(cols))
+        colnames = ", ".join([f'"{c}"' for c in cols])
+        update_set = ", ".join([f'"{c}"=excluded."{c}"' for c in cols if c != "日付"])
+
+        with get_conn() as con:
+            cur = con.execute(
+                f'''
+                INSERT INTO {TABLE} ({colnames})
+                VALUES ({placeholders})
+                ON CONFLICT("日付") DO UPDATE SET
+                {update_set}
+                ''',
+                values
+            )
+            con.commit()
+            return cur.rowcount
+
+    # Postgres
+    colnames = ", ".join([f'"{c}"' for c in cols])
+    placeholders = ", ".join(["%s"] * len(cols))
+    update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
+
+    sql = f'''
+        INSERT INTO "{TABLE}" ({colnames})
+        VALUES ({placeholders})
+        ON CONFLICT("日付") DO UPDATE SET
+        {update_set};
+    '''
+
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(sql, values)
+        pcon.commit()
+        return 1
+    finally:
+        pcon.close()
 
 def delete_by_dates(date_keys: set[str]):
     if not date_keys:
         return
     init_db()
-    params = [(str(k),) for k in date_keys]
-    with get_conn() as con:
-        con.executemany(f'DELETE FROM {TABLE} WHERE "日付" = ?', params)
-        con.commit()
+
+    keys = [str(k) for k in date_keys]
+
+    if not _use_postgres():
+        params = [(k,) for k in keys]
+        with get_conn() as con:
+            con.executemany(f'DELETE FROM {TABLE} WHERE "日付" = ?', params)
+            con.commit()
+        return
+
+    # Postgres: IN (%s, %s, ...)
+    placeholders = ", ".join(["%s"] * len(keys))
+    sql = f'DELETE FROM "{TABLE}" WHERE "日付" IN ({placeholders});'
+
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(sql, keys)
+        pcon.commit()
+    finally:
+        pcon.close()
 
 # -----------------------------
 # 入力パース（空欄OK）
