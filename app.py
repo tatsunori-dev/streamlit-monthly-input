@@ -117,6 +117,11 @@ def init_db():
     finally:
         pcon.close()
 
+# ✅ ここ（init_db() の直後 / load_df() の直前）
+print("[DB] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")), flush=True)
+print("[DB] DATABASE_URL set    =", bool(os.getenv("DATABASE_URL")), flush=True)
+print("[DB] backend             =", "postgres" if _use_postgres() else "sqlite", flush=True)
+
 def load_df() -> pd.DataFrame:
     init_db()
 
