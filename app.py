@@ -50,6 +50,13 @@ import os
 import psycopg2
 
 # -----------------------------
+# DB backend debug (Railway Logsで確認用)
+# -----------------------------
+print("[DB] SUPABASE_DB_URL set =", bool(os.getenv("SUPABASE_DB_URL")))
+print("[DB] DATABASE_URL set    =", bool(os.getenv("DATABASE_URL")))
+print("[DB] backend             =", "postgres" if (os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")) else "sqlite")
+
+# -----------------------------
 # DB backend switch
 #   - SUPABASE_DB_URL(or DATABASE_URL) があれば Postgres
 #   - なければ SQLite
