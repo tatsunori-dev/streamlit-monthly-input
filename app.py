@@ -31,15 +31,6 @@ def require_login():
     if "authed" not in st.session_state:
         st.session_state["authed"] = False
 
-    # ログイン済みならサイドバーにログアウトを出して通過
-    if st.session_state["authed"]:
-        with st.sidebar:
-            st.success(f"ログイン中: {u}")
-            if st.button("ログアウト", key="btn_logout_main"):
-                st.session_state["authed"] = False
-                st.rerun()
-        return
-
     # 未ログインならログイン画面
     st.title("ログイン")
     user = st.text_input("ユーザー名")
@@ -61,12 +52,13 @@ st.set_page_config(page_title="月次入力", layout="wide")
 
 require_login()
 
-# ✅ここに入れる（ログイン通過後だけ表示される）
-with st.sidebar:
-    st.caption("ログイン中")
-    if st.button("ログアウト", key="btn_logout_sidebar"):
-        st.session_state["authed"] = False
-        st.rerun()
+if st.session_state.get("authed", False):
+    u_now = os.getenv("APP_USERNAME", "")
+    with st.sidebar:
+        st.success(f"ログイン中: {u_now}" if u_now else "ログイン中")
+        if st.button("ログアウト", key="btn_logout_sidebar"):
+            st.session_state["authed"] = False
+            st.rerun()
 
 import pandas as pd
 import calendar
