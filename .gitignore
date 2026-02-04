@@ -25,3 +25,9 @@ reports/
 _private/
 
 !requirements.txt
+cd ~/Desktop/python_practice
+cat >> .gitignore << 'EOF'
+data.db
+data.db.bak
+__pycache__/
+.DS_Store
