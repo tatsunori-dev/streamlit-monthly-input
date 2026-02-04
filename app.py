@@ -5,10 +5,25 @@ import streamlit as st
 import os
 import streamlit as st
 
+def _secret(path: str, default: str = "") -> str:
+    """secrets.toml が無い環境でも落ちないように読む"""
+    try:
+        cur = st.secrets
+        for k in path.split("."):
+            cur = cur[k]
+        return str(cur)
+    except Exception:
+        return default
+
 def require_login():
-    # Railway(本番)は環境変数を優先、なければsecrets.toml(ローカル)を見る
-    u = os.getenv("APP_USERNAME") or st.secrets.get("auth", {}).get("username", "")
-    p = os.getenv("APP_PASSWORD") or st.secrets.get("auth", {}).get("password", "")
+    u = os.getenv("APP_USERNAME") or _secret("auth.username", "")
+    p = os.getenv("APP_PASSWORD") or _secret("auth.password", "")
+
+    # ローカルで環境変数もsecretsも無いなら、ログインをスキップ（開発用）
+    if not u and not p:
+        return
+
+    # --- ここから先は既存のログイン処理のままでOK ---
 
     if not u or not p:
         st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
@@ -85,49 +100,24 @@ def on_amount_change():
 import psycopg2
 
 # -----------------------------
-# DB backend switch
-#   - SUPABASE_DB_URL(or DATABASE_URL) があれば Postgres
-#   - なければ SQLite
+# Supabase(Postgres) 固定
+#   - SUPABASE_DB_URL が必須
 # -----------------------------
-def _pg_url() -> str | None:
-    url = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+def _pg_url() -> str:
+    url = os.getenv("SUPABASE_DB_URL")
     if not url:
-        return None
+        raise RuntimeError("SUPABASE_DB_URL が未設定だよ（Railway Variables を確認してね）")
 
     # sslmode を安全側で付与（既にあればそのまま）
     if "sslmode=" not in url:
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
 
-def _use_postgres() -> bool:
-    return _pg_url() is not None
-
-def get_conn():
-    """SQLite connection (local fallback)"""
-    return sqlite3.connect(DB_PATH)
-
 def _pg_connect():
-    url = _pg_url()
-    if not url:
-        raise RuntimeError("SUPABASE_DB_URL (or DATABASE_URL) が未設定だよ")
-    return psycopg2.connect(url)
+    return psycopg2.connect(_pg_url())
 
 def init_db():
-    """SQLite/Postgres ともにテーブルが無ければ作る"""
-    cols_sql = ", ".join([f'"{c}" TEXT' for c in COLUMNS])
-
-    if not _use_postgres():
-        with get_conn() as con:
-            con.execute(f'''
-                CREATE TABLE IF NOT EXISTS {TABLE} (
-                    {cols_sql},
-                    PRIMARY KEY ("日付")
-                )
-            ''')
-            con.commit()
-        return
-
-    # Postgres: 全カラム TEXT / PKは日付
+    """Postgres にテーブルが無ければ作る（全カラムTEXT / PK=日付）"""
     col_defs = []
     for c in COLUMNS:
         if c == "日付":
@@ -145,27 +135,23 @@ def init_db():
     finally:
         pcon.close()
 
-sys.stderr.write(f"[DB] backend={'postgres' if _use_postgres() else 'sqlite'}\n")
+# Railway Logs で確認用（postgres固定）
+sys.stderr.write("[DB] backend=postgres\n")
 sys.stderr.flush()
 
 def load_df() -> pd.DataFrame:
     init_db()
 
-    if not _use_postgres():
-        with get_conn() as con:
-            df = pd.read_sql_query(f'SELECT * FROM {TABLE}', con)
-    else:
-        pcon = _pg_connect()
-        try:
-            with pcon.cursor() as cur:
-                cur.execute(f'SELECT * FROM "{TABLE}";')
-                rows = cur.fetchall()
-                cols = [d[0] for d in cur.description]
-            df = pd.DataFrame(rows, columns=cols)
-        finally:
-            pcon.close()
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(f'SELECT * FROM "{TABLE}";')
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+        df = pd.DataFrame(rows, columns=cols)
+    finally:
+        pcon.close()
 
-    # 欠けカラム補完 & 並び統一
     for c in COLUMNS:
         if c not in df.columns:
             df[c] = ""
@@ -180,24 +166,16 @@ def load_df() -> pd.DataFrame:
 def load_row(date_key: str) -> dict | None:
     init_db()
 
-    if not _use_postgres():
-        with get_conn() as con:
-            cur = con.execute(f'SELECT * FROM {TABLE} WHERE "日付" = ? LIMIT 1', (date_key,))
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(f'SELECT * FROM "{TABLE}" WHERE "日付" = %s LIMIT 1;', (date_key,))
             row = cur.fetchone()
             if not row:
                 return None
             cols = [d[0] for d in cur.description]
-    else:
-        pcon = _pg_connect()
-        try:
-            with pcon.cursor() as cur:
-                cur.execute(f'SELECT * FROM "{TABLE}" WHERE "日付" = %s LIMIT 1;', (date_key,))
-                row = cur.fetchone()
-                if not row:
-                    return None
-                cols = [d[0] for d in cur.description]
-        finally:
-            pcon.close()
+    finally:
+        pcon.close()
 
     data = dict(zip(cols, row))
     for c in COLUMNS:
@@ -397,7 +375,7 @@ if "fresh_h_s" not in st.session_state:
 # -----------------------------
 # UI
 # -----------------------------
-st.markdown(f"## 月次入力（{'Postgres' if _use_postgres() else 'SQLite'}）")
+st.markdown("## 月次入力（Postgres / Supabase）")
 df = load_df()
 # -----------------------------
 # 初回だけ：日付(d)の行を読み込んで session_state を先に埋める（ウィジェット生成前）
