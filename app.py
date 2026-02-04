@@ -35,7 +35,7 @@ def require_login():
     if st.session_state["authed"]:
         with st.sidebar:
             st.success(f"ログイン中: {u}")
-            if st.button("ログアウト"):
+            if st.button("ログアウト", key="btn_logout_main"):
                 st.session_state["authed"] = False
                 st.rerun()
         return
@@ -64,7 +64,7 @@ require_login()
 # ✅ここに入れる（ログイン通過後だけ表示される）
 with st.sidebar:
     st.caption("ログイン中")
-    if st.button("ログアウト"):
+    if st.button("ログアウト", key="btn_logout_sidebar"):
         st.session_state["authed"] = False
         st.rerun()
 
