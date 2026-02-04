@@ -24,8 +24,6 @@ def require_login():
     if not u and not p:
         return
 
-    # --- ここから先は既存のログイン処理のままでOK ---
-
     if not u or not p:
         st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
         st.stop()
@@ -33,9 +31,16 @@ def require_login():
     if "authed" not in st.session_state:
         st.session_state["authed"] = False
 
+    # ログイン済みならサイドバーにログアウトを出して通過
     if st.session_state["authed"]:
+        with st.sidebar:
+            st.success(f"ログイン中: {u}")
+            if st.button("ログアウト"):
+                st.session_state["authed"] = False
+                st.rerun()
         return
 
+    # 未ログインならログイン画面
     st.title("ログイン")
     user = st.text_input("ユーザー名")
     pw = st.text_input("パスワード", type="password")
@@ -56,8 +61,14 @@ st.set_page_config(page_title="月次入力", layout="wide")
 
 require_login()
 
+# ✅ここに入れる（ログイン通過後だけ表示される）
+with st.sidebar:
+    st.caption("ログイン中")
+    if st.button("ログアウト"):
+        st.session_state["authed"] = False
+        st.rerun()
+
 import pandas as pd
-import sqlite3
 import calendar
 from datetime import date, datetime, timedelta
 from pathlib import Path
