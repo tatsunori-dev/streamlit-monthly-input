@@ -2,9 +2,6 @@ import os
 import sys
 import streamlit as st
 
-import os
-import streamlit as st
-
 def _secret(path: str, default: str = "") -> str:
     """secrets.toml が無い環境でも落ちないように読む"""
     try:
@@ -16,6 +13,10 @@ def _secret(path: str, default: str = "") -> str:
         return default
 
 def require_login():
+    # ローカル開発はログイン不要（MacでだけOFFにしたいならこのフラグを使う）
+    if os.getenv("DEV_NO_AUTH") == "1":
+        return
+
     u = os.getenv("APP_USERNAME") or _secret("auth.username", "")
     p = os.getenv("APP_PASSWORD") or _secret("auth.password", "")
 
@@ -48,6 +49,11 @@ def require_login():
 
     st.stop()
 
+# -----------------------------
+# Streamlit（必ず最上部付近）
+# -----------------------------
+st.set_page_config(page_title="月次入力", layout="wide")
+
 require_login()
 
 import pandas as pd
@@ -60,13 +66,8 @@ from pathlib import Path
 # Path（先に定義）
 # -----------------------------
 APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "data.db" 
+DB_PATH = APP_DIR / "data.db"
 TABLE = "records"
-
-# -----------------------------
-# Streamlit（必ず最上部付近）
-# -----------------------------
-st.set_page_config(page_title="月次入力", layout="wide")
 
 # ここにUIは置かない（関数定義がまだ）
 
@@ -104,11 +105,9 @@ import psycopg2
 #   - SUPABASE_DB_URL が必須
 # -----------------------------
 def _pg_url() -> str:
-    url = os.getenv("SUPABASE_DB_URL")
+    url = os.getenv("SUPABASE_DB_URL") or st.secrets.get("SUPABASE_DB_URL", "")
     if not url:
-        raise RuntimeError("SUPABASE_DB_URL が未設定だよ（Railway Variables を確認してね）")
-
-    # sslmode を安全側で付与（既にあればそのまま）
+        raise RuntimeError("SUPABASE_DB_URL が未設定だよ（Railway Variables / ローカルsecrets を確認）")
     if "sslmode=" not in url:
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
@@ -186,34 +185,8 @@ def upsert_row(row: dict) -> int:
     init_db()
 
     cols = COLUMNS
-    values = []
-    for c in cols:
-        v = row.get(c, "")
-        # Postgres TEXTへ寄せる（数字/float/None/"" ぜんぶOK）
-        if v is None:
-            values.append("")
-        else:
-            values.append(str(v))
+    values = ["" if row.get(c) is None else str(row.get(c, "")) for c in cols]
 
-    if not _use_postgres():
-        placeholders = ", ".join(["?"] * len(cols))
-        colnames = ", ".join([f'"{c}"' for c in cols])
-        update_set = ", ".join([f'"{c}"=excluded."{c}"' for c in cols if c != "日付"])
-
-        with get_conn() as con:
-            cur = con.execute(
-                f'''
-                INSERT INTO {TABLE} ({colnames})
-                VALUES ({placeholders})
-                ON CONFLICT("日付") DO UPDATE SET
-                {update_set}
-                ''',
-                values
-            )
-            con.commit()
-            return cur.rowcount
-
-    # Postgres
     colnames = ", ".join([f'"{c}"' for c in cols])
     placeholders = ", ".join(["%s"] * len(cols))
     update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
