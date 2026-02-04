@@ -1,6 +1,40 @@
 import os
 import sys
 import streamlit as st
+
+import os
+import streamlit as st
+
+def require_login():
+    # Railway(本番)は環境変数を優先、なければsecrets.toml(ローカル)を見る
+    u = os.getenv("APP_USERNAME") or st.secrets.get("auth", {}).get("username", "")
+    p = os.getenv("APP_PASSWORD") or st.secrets.get("auth", {}).get("password", "")
+
+    if not u or not p:
+        st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
+        st.stop()
+
+    if "authed" not in st.session_state:
+        st.session_state["authed"] = False
+
+    if st.session_state["authed"]:
+        return
+
+    st.title("ログイン")
+    user = st.text_input("ユーザー名")
+    pw = st.text_input("パスワード", type="password")
+
+    if st.button("ログイン"):
+        if user == u and pw == p:
+            st.session_state["authed"] = True
+            st.rerun()
+        else:
+            st.error("ユーザー名かパスワードが違う")
+
+    st.stop()
+
+require_login()
+
 import pandas as pd
 import sqlite3
 import calendar
