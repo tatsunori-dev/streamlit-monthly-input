@@ -621,6 +621,35 @@ else:
     if "選択" not in view.columns:
         view.insert(0, "選択", False)
 
+    edited = st.data_editor(
+        view,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "選択": st.column_config.CheckboxColumn("選択", help="削除したい行にチェック")
+        },
+        disabled=[c for c in view.columns if c != "選択"],
+        key=f"editor_{sel_month}"
+    )
+
+    picked = edited[edited["選択"] == True]
+
+    st.caption("削除プレビュー（3行以上スクロールOK）")
+    if picked.empty:
+        st.caption("チェックされた行はありません")
+    else:
+        st.dataframe(picked.drop(columns=["選択"]), width="stretch", hide_index=True)
+        confirm = st.checkbox("削除してOK（戻せません）", key=f"confirm_del_{sel_month}")
+
+        if st.button("チェックした行を削除", key="btn_del"):
+            if not confirm:
+                st.warning("チェックを入れてから押してね")
+            else:
+                del_keys = set(picked["日付"].astype(str).tolist())
+                delete_by_dates(del_keys)
+                st.success(f"削除しました: {', '.join(sorted(del_keys))}")
+                st.rerun()
+
     # -----------------------------
     # CSVエクスポート（表示中の月 / 全データ）
     # -----------------------------
@@ -711,35 +740,6 @@ if up_file is not None:
                     st.rerun()
                 finally:
                     pcon.close()
-
-    edited = st.data_editor(
-        view,
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "選択": st.column_config.CheckboxColumn("選択", help="削除したい行にチェック")
-        },
-        disabled=[c for c in view.columns if c != "選択"],
-        key=f"editor_{sel_month}"
-    )
-
-    picked = edited[edited["選択"] == True]
-
-    st.caption("削除プレビュー（3行以上スクロールOK）")
-    if picked.empty:
-        st.caption("チェックされた行はありません")
-    else:
-        st.dataframe(picked.drop(columns=["選択"]), width="stretch", hide_index=True)
-        confirm = st.checkbox("削除してOK（戻せません）", key=f"confirm_del_{sel_month}")
-
-        if st.button("チェックした行を削除", key="btn_del"):
-            if not confirm:
-                st.warning("チェックを入れてから押してね")
-            else:
-                del_keys = set(picked["日付"].astype(str).tolist())
-                delete_by_dates(del_keys)
-                st.success(f"削除しました: {', '.join(sorted(del_keys))}")
-                st.rerun()
 
 # -----------------------------
 # レポ生成（簡易：月次集計）
