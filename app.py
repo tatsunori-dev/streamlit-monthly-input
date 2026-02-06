@@ -647,6 +647,71 @@ else:
         key="dl_all",
     )
 
+# -----------------------------
+# バックアップ/復元（CSV → DB）
+# -----------------------------
+st.subheader("バックアップ / 復元（CSV → DB）")
+st.caption("⚠ インポートは上書き保存（同日なら更新）になります。実行前に全データCSVを手元に保存推奨。")
+
+up_file = st.file_uploader("CSVを選択（monthly_all_... または monthly_YYYY-MM_...）", type=["csv"], key="csv_upload")
+
+if up_file is not None:
+    try:
+        # UTF-8-SIG を想定（Excelでも文字化けしにくい）
+        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8-sig")
+    except Exception:
+        # 失敗したら通常UTF-8でも試す
+        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8")
+
+    # NaNを""へ
+    import_df = import_df.fillna("")
+
+    # 必須：日付列がないと無理
+    if "日付" not in import_df.columns:
+        st.error("CSVに『日付』列がありません。正しいCSVを選んでください。")
+    else:
+        # 余計な列は捨てる / 足りない列は補完して並びを揃える
+        for c in COLUMNS:
+            if c not in import_df.columns:
+                import_df[c] = ""
+        import_df = import_df[COLUMNS]
+
+        st.write("プレビュー（先頭10行）")
+        st.dataframe(import_df.head(10), width="stretch", hide_index=True)
+
+        confirm_imp = st.checkbox("インポートしてOK（上書きが発生する場合があります）", key="confirm_import")
+
+        if st.button("CSVをDBへインポート（上書き）", type="primary", key="btn_import"):
+            if not confirm_imp:
+                st.warning("チェックを入れてから押してね")
+            else:
+                # まとめて速くする：1コネクションで回す
+                pcon = _pg_connect()
+                try:
+                    with pcon.cursor() as cur:
+                        cols = COLUMNS
+                        colnames = ", ".join([f'"{c}"' for c in cols])
+                        placeholders = ", ".join(["%s"] * len(cols))
+                        update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
+                        sql = f'''
+                            INSERT INTO "{TABLE}" ({colnames})
+                            VALUES ({placeholders})
+                            ON CONFLICT("日付") DO UPDATE SET
+                            {update_set};
+                        '''
+
+                        n = 0
+                        for _, r in import_df.iterrows():
+                            values = ["" if r.get(c) is None else str(r.get(c, "")) for c in cols]
+                            cur.execute(sql, values)
+                            n += 1
+
+                    pcon.commit()
+                    st.success(f"インポート完了: {n} 行")
+                    st.rerun()
+                finally:
+                    pcon.close()
+
     edited = st.data_editor(
         view,
         width="stretch",
@@ -818,6 +883,20 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     lines.append(f"Flex : 売上 {flex_sales:,} 円 / 時間 {flex_h:g} h / 時給 {flex_hourly:,} 円")
     lines.append(f"Fresh: 売上 {fresh_sales:,} 円 / 時間 {fresh_h:g} h / 時給 {fresh_hourly:,} 円")
     lines.append(f"他   : 売上 {other_sales:,} 円 / 時間 {other_h:g} h / 時給 {other_hourly:,} 円")
+
+    # -----------------------------
+    # 1日あたり平均稼働時間（稼働日平均 / 暦日平均）
+    # -----------------------------
+    work_days = int((tmp["合計h_num"] > 0).sum())              # 稼働した日（時間>0）
+    avg_workday_h = (sum_h / work_days) if work_days > 0 else 0.0
+
+    last_day = calendar.monthrange(y, mo)[1]                   # その月の日数
+    avg_calendar_h = (sum_h / last_day) if last_day > 0 else 0.0
+
+    lines.append("")
+    lines.append("【稼働時間（平均）】")
+    lines.append(f"稼働日数: {work_days} 日 / 稼働日平均: {avg_workday_h:.2f} h/日")
+    lines.append(f"暦日平均（休み込み）: {avg_calendar_h:.2f} h/日（{last_day}日で割り算）")
 
     if fresh_h > 0 and fresh_h < 5.0:
         lines.append("")
