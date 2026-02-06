@@ -218,16 +218,20 @@ def upsert_row(row: dict) -> int:
 def delete_by_dates(date_keys: set[str]):
     if not date_keys:
         return
-    init_db()
 
+    init_db()
     keys = [str(k) for k in date_keys]
 
-    if not _use_postgres():
-        params = [(k,) for k in keys]
-        with get_conn() as con:
-            con.executemany(f'DELETE FROM {TABLE} WHERE "日付" = ?', params)
-            con.commit()
-        return
+    placeholders = ", ".join(["%s"] * len(keys))
+    sql = f'DELETE FROM "{TABLE}" WHERE "日付" IN ({placeholders});'
+
+    pcon = _pg_connect()
+    try:
+        with pcon.cursor() as cur:
+            cur.execute(sql, keys)
+        pcon.commit()
+    finally:
+        pcon.close()
 
     # Postgres: IN (%s, %s, ...)
     placeholders = ", ".join(["%s"] * len(keys))
@@ -638,7 +642,7 @@ else:
         st.caption("チェックされた行はありません")
     else:
         st.dataframe(picked.drop(columns=["選択"]), width="stretch", hide_index=True)
-        confirm = st.checkbox("削除してOK（戻せません）", key="confirm_del_{sel_month}")
+        confirm = st.checkbox("削除してOK（戻せません）", key=f"confirm_del_{sel_month}")
 
         if st.button("チェックした行を削除", key="btn_del"):
             if not confirm:
