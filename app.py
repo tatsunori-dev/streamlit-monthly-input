@@ -634,12 +634,15 @@ else:
         mime="text/csv",
         key=f"dl_month_{sel_month}",
     )
-
+    
+    today_str = date.today().isoformat()
+    
     csv_all = df.to_csv(index=False).encode("utf-8-sig")
+
     st.download_button(
         label="📦 全データをCSVでダウンロード（バックアップ）",
         data=csv_all,
-        file_name="monthly_all.csv",
+        file_name=f"monthly_all_{today_str}.csv",
         mime="text/csv",
         key="dl_all",
     )
