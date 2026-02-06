@@ -33,3 +33,5 @@ __pycache__/
 .DS_Store
 .streamlit/secrets.toml
 .streamlit/secrets.toml
+migrate_sqlite_to_supabase.py
+report_all_2026.py
