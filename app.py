@@ -31,14 +31,27 @@ def require_login():
     if "authed" not in st.session_state:
         st.session_state["authed"] = False
 
-    # 未ログインならログイン画面
-    st.title("ログイン")
-    user = st.text_input("ユーザー名")
-    pw = st.text_input("パスワード", type="password")
+    # ログイン済み：サイドバーにログアウトだけ出す
+    if st.session_state["authed"]:
+        with st.sidebar:
+            st.success(f"ログイン中: {st.session_state.get('auth_user','')}")
+            if st.button("ログアウト", key="btn_logout"):
+                st.session_state["authed"] = False
+                st.session_state.pop("auth_user", None)
+                st.rerun()
+        return
 
-    if st.button("ログイン"):
+    st.title("ログイン")
+
+    with st.form("login_form", clear_on_submit=False):
+        user = st.text_input("ユーザー名", key="login_user")
+        pw = st.text_input("パスワード", type="password", key="login_pw")
+        submitted = st.form_submit_button("ログイン")
+
+    if submitted:
         if user == u and pw == p:
             st.session_state["authed"] = True
+            st.session_state["auth_user"] = user
             st.rerun()
         else:
             st.error("ユーザー名かパスワードが違う")
@@ -51,14 +64,6 @@ def require_login():
 st.set_page_config(page_title="月次入力", layout="wide")
 
 require_login()
-
-if st.session_state.get("authed", False):
-    u_now = os.getenv("APP_USERNAME", "")
-    with st.sidebar:
-        st.success(f"ログイン中: {u_now}" if u_now else "ログイン中")
-        if st.button("ログアウト", key="btn_logout_sidebar"):
-            st.session_state["authed"] = False
-            st.rerun()
 
 import pandas as pd
 import calendar
