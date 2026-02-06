@@ -68,13 +68,10 @@ require_login()
 import pandas as pd
 import calendar
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 # -----------------------------
 # Path（先に定義）
 # -----------------------------
-APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "data.db"
 TABLE = "records"
 
 # ここにUIは置かない（関数定義がまだ）
@@ -623,6 +620,29 @@ else:
     view = view.sort_values("_d").drop(columns=["_d"]).reset_index(drop=True)
     if "選択" not in view.columns:
         view.insert(0, "選択", False)
+
+    # -----------------------------
+    # CSVエクスポート（表示中の月 / 全データ）
+    # -----------------------------
+    export_view = view.drop(columns=["選択"], errors="ignore").copy()
+
+    csv_month = export_view.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        label=f"📤 {sel_month} をCSVでダウンロード",
+        data=csv_month,
+        file_name=f"monthly_{sel_month}.csv",
+        mime="text/csv",
+        key=f"dl_month_{sel_month}",
+    )
+
+    csv_all = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        label="📦 全データをCSVでダウンロード（バックアップ）",
+        data=csv_all,
+        file_name="monthly_all.csv",
+        mime="text/csv",
+        key="dl_all",
+    )
 
     edited = st.data_editor(
         view,
