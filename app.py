@@ -105,6 +105,23 @@ def on_amount_change():
 
 import psycopg2
 
+from typing import Callable, TypeVar, Any
+T = TypeVar("T")
+
+def run_db(label: str, fn: Callable[[], T], default: T | None = None) -> T | None:
+    """
+    DB処理の共通ラッパー
+    - 成功: fn()の結果を返す
+    - 失敗: st.error でユーザー向け表示 + st.exception で詳細表示（ログにも出る）して default を返す
+    """
+    try:
+        return fn()
+    except Exception as e:
+        st.error(f"DBエラー: {label} に失敗しました。設定や接続状態を確認してください。")
+        st.caption(f"詳細: {type(e).__name__}: {e}")
+        st.exception(e)  # Railway Logsにも出る
+        return default
+
 # -----------------------------
 # Supabase(Postgres) 固定
 #   - SUPABASE_DB_URL が必須
@@ -119,6 +136,7 @@ def _pg_url() -> str:
 
 def _pg_connect():
     return psycopg2.connect(_pg_url())
+import traceback
 
 def init_db():
     """Postgres にテーブルが無ければ作る（全カラムTEXT / PK=日付）"""
@@ -144,28 +162,34 @@ sys.stderr.write("[DB] backend=postgres\n")
 sys.stderr.flush()
 
 def load_df() -> pd.DataFrame:
-    init_db()
+    def _do():
+        init_db()
 
-    pcon = _pg_connect()
-    try:
-        with pcon.cursor() as cur:
-            cur.execute(f'SELECT * FROM "{TABLE}";')
-            rows = cur.fetchall()
-            cols = [d[0] for d in cur.description]
-        df = pd.DataFrame(rows, columns=cols)
-    finally:
-        pcon.close()
+        pcon = _pg_connect()
+        try:
+            with pcon.cursor() as cur:
+                cur.execute(f'SELECT * FROM "{TABLE}";')
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+            df = pd.DataFrame(rows, columns=cols)
+        finally:
+            pcon.close()
 
-    for c in COLUMNS:
-        if c not in df.columns:
-            df[c] = ""
-    df = df[COLUMNS]
+        # 足りない列を補完して順番を揃える
+        for c in COLUMNS:
+            if c not in df.columns:
+                df[c] = ""
+        df = df[COLUMNS]
 
-    if not df.empty:
-        df["_sort"] = pd.to_datetime(df["日付"], errors="coerce")
-        df = df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+        # 日付でソート
+        if not df.empty:
+            df["_sort"] = pd.to_datetime(df["日付"], errors="coerce")
+            df = df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
-    return df
+        return df
+
+    out = run_db("データ読み込み（load_df）", _do)
+    return out if isinstance(out, pd.DataFrame) else pd.DataFrame(columns=COLUMNS)
 
 def load_row(date_key: str) -> dict | None:
     init_db()
@@ -186,61 +210,57 @@ def load_row(date_key: str) -> dict | None:
         data.setdefault(c, "")
     return data
 
-def upsert_row(row: dict) -> int:
-    init_db()
+def upsert_row(row: dict) -> bool:
+    def _do() -> bool:
+        init_db()
 
-    cols = COLUMNS
-    values = ["" if row.get(c) is None else str(row.get(c, "")) for c in cols]
+        cols = COLUMNS
+        values = ["" if row.get(c) is None else str(row.get(c, "")) for c in cols]
 
-    colnames = ", ".join([f'"{c}"' for c in cols])
-    placeholders = ", ".join(["%s"] * len(cols))
-    update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
+        colnames = ", ".join([f'"{c}"' for c in cols])
+        placeholders = ", ".join(["%s"] * len(cols))
+        update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
 
-    sql = f'''
-        INSERT INTO "{TABLE}" ({colnames})
-        VALUES ({placeholders})
-        ON CONFLICT("日付") DO UPDATE SET
-        {update_set};
-    '''
+        sql = f"""
+            INSERT INTO "{TABLE}" ({colnames})
+            VALUES ({placeholders})
+            ON CONFLICT("日付") DO UPDATE SET
+            {update_set};
+        """
 
-    pcon = _pg_connect()
-    try:
-        with pcon.cursor() as cur:
-            cur.execute(sql, values)
-        pcon.commit()
-        return 1
-    finally:
-        pcon.close()
+        pcon = _pg_connect()
+        try:
+            with pcon.cursor() as cur:
+                cur.execute(sql, values)
+            pcon.commit()
+            return True
+        finally:
+            pcon.close()
 
-def delete_by_dates(date_keys: set[str]):
+    # run_db は「失敗時に st.error + ログ出し」して False を返す想定
+    return run_db("保存（upsert）", _do, default=False)
+
+def delete_by_dates(date_keys: set[str]) -> bool:
     if not date_keys:
-        return
+        return True
 
-    init_db()
-    keys = [str(k) for k in date_keys]
+    def _do() -> bool:
+        init_db()
+        keys = [str(k) for k in sorted(date_keys)]
 
-    placeholders = ", ".join(["%s"] * len(keys))
-    sql = f'DELETE FROM "{TABLE}" WHERE "日付" IN ({placeholders});'
+        placeholders = ", ".join(["%s"] * len(keys))
+        sql = f'DELETE FROM "{TABLE}" WHERE "日付" IN ({placeholders});'
 
-    pcon = _pg_connect()
-    try:
-        with pcon.cursor() as cur:
-            cur.execute(sql, keys)
-        pcon.commit()
-    finally:
-        pcon.close()
+        pcon = _pg_connect()
+        try:
+            with pcon.cursor() as cur:
+                cur.execute(sql, keys)
+            pcon.commit()
+            return True
+        finally:
+            pcon.close()
 
-    # Postgres: IN (%s, %s, ...)
-    placeholders = ", ".join(["%s"] * len(keys))
-    sql = f'DELETE FROM "{TABLE}" WHERE "日付" IN ({placeholders});'
-
-    pcon = _pg_connect()
-    try:
-        with pcon.cursor() as cur:
-            cur.execute(sql, keys)
-        pcon.commit()
-    finally:
-        pcon.close()
+    return bool(run_db("削除（delete_by_dates）", _do, default=False))
 
 # -----------------------------
 # 入力パース（空欄OK）
@@ -583,13 +603,13 @@ if save:
     for c in CLIENT_COLS:
         row[c] = to_cell_int(client_nums.get(c, 0))
 
-    upsert_row(row)
-    # 保存後：この状態を「保存済み」として記録（警告解除）
-    st.session_state["loaded_sig"] = _sig(_current_payload())
-    st.success(f"保存しました: {key}")
-
-    st.session_state.pop("editor", None)
-    st.rerun()
+    ok = upsert_row(row)
+    if ok:
+        st.session_state["loaded_sig"] = _sig(_current_payload())
+        st.success(f"保存しました: {key}")
+        st.session_state.pop("editor", None)
+        st.rerun()
+    # 失敗時は run_db が st.error を出すので、ここは何もしなくてOK
 
 # -----------------------------
 # データ閲覧＆削除
@@ -708,38 +728,43 @@ if up_file is not None:
         st.write("プレビュー（先頭10行）")
         st.dataframe(import_df.head(10), width="stretch", hide_index=True)
 
-        confirm_imp = st.checkbox("インポートしてOK（上書きが発生する場合があります）", key="confirm_import")
+confirm_imp = st.checkbox("インポートしてOK（上書きが発生する場合があります）", key="confirm_import")
 
-        if st.button("CSVをDBへインポート（上書き）", type="primary", key="btn_import"):
-            if not confirm_imp:
-                st.warning("チェックを入れてから押してね")
-            else:
-                # まとめて速くする：1コネクションで回す
-                pcon = _pg_connect()
-                try:
-                    with pcon.cursor() as cur:
-                        cols = COLUMNS
-                        colnames = ", ".join([f'"{c}"' for c in cols])
-                        placeholders = ", ".join(["%s"] * len(cols))
-                        update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
-                        sql = f'''
-                            INSERT INTO "{TABLE}" ({colnames})
-                            VALUES ({placeholders})
-                            ON CONFLICT("日付") DO UPDATE SET
-                            {update_set};
-                        '''
+if st.button("CSVをDBへインポート（上書き）", type="primary", key="btn_import"):
+    if not confirm_imp:
+        st.warning("チェックを入れてから押してね")
+    else:
+        def _do_import():
+            init_db()
 
-                        n = 0
-                        for _, r in import_df.iterrows():
-                            values = ["" if r.get(c) is None else str(r.get(c, "")) for c in cols]
-                            cur.execute(sql, values)
-                            n += 1
+            cols = COLUMNS
+            colnames = ", ".join([f'"{c}"' for c in cols])
+            placeholders = ", ".join(["%s"] * len(cols))
+            update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
+            sql = f'''
+                INSERT INTO "{TABLE}" ({colnames})
+                VALUES ({placeholders})
+                ON CONFLICT("日付") DO UPDATE SET
+                {update_set};
+            '''
 
-                    pcon.commit()
-                    st.success(f"インポート完了: {n} 行")
-                    st.rerun()
-                finally:
-                    pcon.close()
+            pcon = _pg_connect()
+            try:
+                with pcon.cursor() as cur:
+                    n = 0
+                    for _, r in import_df.iterrows():
+                        values = ["" if r.get(c) is None else str(r.get(c, "")) for c in cols]
+                        cur.execute(sql, values)
+                        n += 1
+                pcon.commit()
+                return n
+            finally:
+                pcon.close()
+
+        n = run_db("CSVインポート（上書き）", _do_import)
+        if n is not None:
+            st.success(f"インポート完了: {n} 行")
+            st.rerun()
 
 # -----------------------------
 # レポ生成（簡易：月次集計）
