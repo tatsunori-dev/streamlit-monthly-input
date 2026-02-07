@@ -191,6 +191,13 @@ def load_df() -> pd.DataFrame:
     out = run_db("データ読み込み（load_df）", _do)
     return out if isinstance(out, pd.DataFrame) else pd.DataFrame(columns=COLUMNS)
 
+
+def load_row_safe(date_key: str) -> dict | None:
+    """DBエラー時は st.error を出して None を返す（UI側はこれを使う）"""
+    def _do():
+        return load_row(date_key)
+    return run_db("データ取得（load_row）", _do, default=None)
+
 def load_row(date_key: str) -> dict | None:
     init_db()
 
@@ -260,7 +267,7 @@ def delete_by_dates(date_keys: set[str]) -> bool:
         finally:
             pcon.close()
 
-    return bool(run_db("削除（delete_by_dates）", _do, default=False))
+    return run_db("削除（delete_by_dates）", _do, default=False)
 
 # -----------------------------
 # 入力パース（空欄OK）
@@ -389,7 +396,7 @@ if "_boot" not in st.session_state:
     st.session_state["_boot"] = True
 
     key0 = st.session_state["d"].isoformat()
-    data0 = load_row(key0)
+    data0 = load_row_safe(key0)
 
     if not data0:
         st.session_state["total_h_s"] = ""
@@ -666,9 +673,11 @@ else:
                 st.warning("チェックを入れてから押してね")
             else:
                 del_keys = set(picked["日付"].astype(str).tolist())
-                delete_by_dates(del_keys)
-                st.success(f"削除しました: {', '.join(sorted(del_keys))}")
-                st.rerun()
+                ok = delete_by_dates(del_keys)
+                if ok:
+                    st.success(f"削除しました: {', '.join(sorted(del_keys))}")
+                    st.rerun()
+                # 失敗時は run_db が st.error を出す
 
     # -----------------------------
     # CSVエクスポート（表示中の月 / 全データ）
