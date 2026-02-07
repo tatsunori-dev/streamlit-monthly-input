@@ -11,6 +11,20 @@
 - チェックした行を削除
 - 月次レポ生成（売上/時間/時給 + 各種指標）
 
+## Screenshots
+
+### 1) ログイン
+![Login](images/01_login.png)
+
+### 2) 日付・時間入力
+![Input](images/02_input.png)
+
+### 3) データ一覧（DB）＋CSV
+![DB](images/03_db.png)
+
+### 4) 月次レポ生成
+![Report](images/04_report.png)
+
 ## ローカル起動
 ```bash
 cd ~/Desktop/python_practice
