@@ -1,6 +1,7 @@
 import os
 import sys
 import streamlit as st
+import psycopg2
 from psycopg2.extras import execute_values
 
 def _secret(path: str, default: str = "") -> str:
@@ -89,7 +90,7 @@ COLUMNS = [
 
 def ensure_clients_map():
     if "clients_map" not in st.session_state:
-        st.session_state["clients_map"] = {c: 0 for c in CLIENT_COLS}
+        st.session_state["clients_map"] = {c: "" for c in CLIENT_COLS}
 
 def on_client_change():
     # 取引先を変えたら、その取引先の金額を入力欄に反映
@@ -103,9 +104,6 @@ def on_amount_change():
     c = st.session_state.get("client_sel", CLIENT_COLS[0])
     v = int(st.session_state.get("client_amount", 0) or 0)
     st.session_state["clients_map"][c] = v
-
-import psycopg2
-from psycopg2.extras import execute_values
 
 from typing import Callable, TypeVar, Any
 T = TypeVar("T")
@@ -395,18 +393,6 @@ def on_change_date():
     else:
         clear_inputs()
 
-# 初期化
-if "clients_map" not in st.session_state:
-    st.session_state["clients_map"] = {c: "" for c in CLIENT_COLS}
-if "memo" not in st.session_state:
-    st.session_state["memo"] = ""
-if "total_h_s" not in st.session_state:
-    st.session_state["total_h_s"] = ""
-if "frex_h_s" not in st.session_state:
-    st.session_state["frex_h_s"] = ""
-if "fresh_h_s" not in st.session_state:
-    st.session_state["fresh_h_s"] = ""
-
 # -----------------------------
 # UI
 # -----------------------------
@@ -435,10 +421,10 @@ if "_boot" not in st.session_state:
         st.session_state["frex_h_s"]  = data0.get("frex h", "") or ""
         st.session_state["fresh_h_s"] = data0.get("fresh h", "") or ""
         st.session_state["memo"]      = data0.get("メモ", "") or ""
-        st.session_state["clients_map"] = {c: (to_int(data0.get(c, "")) or 0) for c in CLIENT_COLS}
+        st.session_state["clients_map"] = {c: str(data0.get(c, "") or "") for c in CLIENT_COLS}
 
     st.session_state["client_sel"] = "U"
-    st.session_state["client_amount"] = int(st.session_state["clients_map"].get("U", 0) or 0)
+    st.session_state["client_amount"] = to_int(st.session_state["clients_map"].get("U", "")) or 0
     # 未保存検知：起動時に読み込んだ直後の状態を保存
     st.session_state["loaded_sig"] = _sig(_current_payload())
 
@@ -446,26 +432,17 @@ def on_date_change():
     key = st.session_state["d"].isoformat()
     data = load_row_safe(key)
 
-    if not data:
-        st.session_state["total_h_s"] = ""
-        st.session_state["frex_h_s"] = ""
-        st.session_state["fresh_h_s"] = ""
-        st.session_state["memo"] = ""
-        st.session_state["clients_map"] = {c: 0 for c in CLIENT_COLS}
+    if data:
+        load_inputs_from_row(data)
     else:
-        st.session_state["total_h_s"] = data.get("合計h", "") or ""
-        st.session_state["frex_h_s"]  = data.get("frex h", "") or ""
-        st.session_state["fresh_h_s"] = data.get("fresh h", "") or ""
-        st.session_state["memo"]      = data.get("メモ", "") or ""
-        st.session_state["clients_map"] = {
-    c: (to_int(data.get(c, "")) or 0)
-    for c in CLIENT_COLS
-}
+        clear_inputs()
 
-    st.session_state["client_sel"] = "U"
-    st.session_state["client_amount"] = int(st.session_state["clients_map"].get("U", 0) or 0)
-    # 未保存検知：この日付で読み込んだ直後の状態を保存
+    # その日付に切り替えた直後の状態を「読み込み済み」として記録
     st.session_state["loaded_sig"] = _sig(_current_payload())
+
+    # 選択中取引先の入力欄も同期（UIがそういう作りなら）
+    sel = st.session_state.get("client_sel", "U")
+    st.session_state["client_amount"] = to_int(st.session_state["clients_map"].get(sel, "")) or 0
 
 st.subheader("日付時間入力")
 st.caption("同日なら上書き保存")
@@ -920,7 +897,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     sum_sales = int(tmp["合計売上_num"].sum())
     sum_h = float(tmp["合計h_num"].sum())
     hourly = int(sum_sales / sum_h) if sum_h > 0 else 0
-        # Flex / Fresh / 他（列名は DB のまま: Afrex, Afresh, frex h, fresh h）
+    # Flex / Fresh / 他（列名は DB のまま: Afrex, Afresh, frex h, fresh h）
     flex_sales = int(tmp["Afrex"].sum()) if "Afrex" in tmp.columns else 0
     fresh_sales = int(tmp["Afresh"].sum()) if "Afresh" in tmp.columns else 0
 
