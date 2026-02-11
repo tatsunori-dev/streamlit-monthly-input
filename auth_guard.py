@@ -8,7 +8,14 @@ def auth_guard():
     if should_skip_auth(os.environ):
         return
 
-    u, p = load_credentials(os.environ, dict(st.secrets) if hasattr(st, "secrets") else None)
+secrets_dict = None
+try:
+    # Streamlit には st.secrets 自体は常にあるが、環境によっては参照時に例外になることがある
+    secrets_dict = dict(st.secrets)
+except Exception:
+    secrets_dict = None
+
+u, p = load_credentials(os.environ, secrets_dict)
 
     # ローカルで env も secrets も無いならスキップ（開発用）
     # ※これ要らないなら消してOK（より厳格になる）
