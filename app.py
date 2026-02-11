@@ -1,8 +1,10 @@
+# app.py（先頭）
+
 import os
-import sys
 import streamlit as st
-import psycopg2
-from psycopg2.extras import execute_values
+
+st.set_page_config(page_title="月次入力", layout="wide")
+
 
 def _secret(path: str, default: str = "") -> str:
     """secrets.toml が無い環境でも落ちないように読む"""
@@ -13,6 +15,7 @@ def _secret(path: str, default: str = "") -> str:
         return str(cur)
     except Exception:
         return default
+
 
 def require_login():
     # --- 本番ガード：Railway上ではログイン回避を絶対に許可しない ---
@@ -50,30 +53,32 @@ def require_login():
                 st.rerun()
         return
 
-    st.title("ログイン")
+    # --- 未ログイン：ここでログイン画面を表示して、ここで止める ---
+    st.subheader("ログイン")
 
     with st.form("login_form", clear_on_submit=False):
-        user = st.text_input("ユーザー名", key="login_user")
-        pw = st.text_input("パスワード", type="password", key="login_pw")
+        username = st.text_input("ユーザー名", key="login_username")
+        password = st.text_input("パスワード", type="password", key="login_password")
         submitted = st.form_submit_button("ログイン")
 
     if submitted:
-        if user == u and pw == p:
+        if username == u and password == p:
             st.session_state["authed"] = True
-            st.session_state["auth_user"] = user
+            st.session_state["auth_user"] = username
             st.rerun()
         else:
-            st.error("ユーザー名かパスワードが違う")
+            st.error("ユーザー名/パスワードが違います")
 
     st.stop()
 
-# -----------------------------
-# Streamlit（必ず最上部付近）
-# -----------------------------
-st.set_page_config(page_title="月次入力", layout="wide")
 
+# ここで認証（ログイン済みになるまで下に進まない）
 require_login()
 
+# ここから先は今まで通りの imports / 本体処理
+import sys
+import psycopg2
+from psycopg2.extras import execute_values
 import pandas as pd
 import calendar
 from datetime import date, datetime, timedelta
@@ -143,7 +148,6 @@ def _pg_url() -> str:
 
 def _pg_connect():
     return psycopg2.connect(_pg_url())
-import traceback
 
 def init_db():
     """Postgres にテーブルが無ければ作る（全カラムTEXT / PK=日付）"""
@@ -392,14 +396,6 @@ def load_inputs_from_row(row: dict):
         m[c] = str(row.get(c, "") or "")
     st.session_state["clients_map"] = m
 
-def on_change_date():
-    key = st.session_state["date_pick"].isoformat()
-    row = load_row(key)
-    if row:
-        load_inputs_from_row(row)
-    else:
-        clear_inputs()
-
 # -----------------------------
 # UI
 # -----------------------------
@@ -408,13 +404,15 @@ df = load_df()
 # -----------------------------
 # 初回だけ：日付(d)の行を読み込んで session_state を先に埋める（ウィジェット生成前）
 # -----------------------------
-if "d" not in st.session_state:
+
+# --- 先に d を必ず初期化（_boot より前） ---
+if "d" not in st.session_state or st.session_state["d"] is None:
     st.session_state["d"] = date.today()
 
 if "_boot" not in st.session_state:
     st.session_state["_boot"] = True
 
-    key0 = st.session_state["d"].isoformat()
+    key0 = (st.session_state.get("d") or date.today()).isoformat()
     data0 = load_row_safe(key0)
 
     if not data0:
