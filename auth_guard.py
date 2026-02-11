@@ -1,47 +1,57 @@
 # auth_guard.py
 import os
 import streamlit as st
+
 from auth_core import should_skip_auth, load_credentials, validate
 
+
 def auth_guard():
-    # スキップ条件（ローカルのみ）
+    """
+    - ローカルのみ認証スキップ（DEV用）
+    - Railway本番は必ず認証
+    - Enterでログイン可能（st.form）
+    """
+
+    # 1) スキップ条件（ローカルのみ）
     if should_skip_auth(os.environ):
         return
 
-secrets_dict = None
-try:
-    # Streamlit には st.secrets 自体は常にあるが、環境によっては参照時に例外になることがある
-    secrets_dict = dict(st.secrets)
-except Exception:
+    # 2) secrets 読み込み（環境によって例外になる可能性があるためガード）
     secrets_dict = None
+    try:
+        secrets_dict = dict(st.secrets)
+    except Exception:
+        secrets_dict = None
 
-u, p = load_credentials(os.environ, secrets_dict)
+    # 3) 認証情報取得（env優先 / secrets補助）
+    u, p = load_credentials(os.environ, secrets_dict)
 
-    # ローカルで env も secrets も無いならスキップ（開発用）
-    # ※これ要らないなら消してOK（より厳格になる）
+    # 4) ローカルで env も secrets も無いならスキップ（開発用）
+    #    ※不要ならこの if ブロックを削除すると「常に認証必須」になる
     if (not u and not p) and (not os.environ.get("RAILWAY_ENVIRONMENT")):
         return
 
+    # 5) Railway / 本番で認証情報が無いのはエラー
     if not u or not p:
         st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
         st.stop()
 
+    # 6) セッション初期化
     if "authed" not in st.session_state:
         st.session_state["authed"] = False
 
-    # ログイン済み
+    # 7) ログイン済み表示
     if st.session_state["authed"]:
         with st.sidebar:
-            st.success(f"ログイン中: {st.session_state.get('auth_user','')}")
+            st.success(f"ログイン中: {st.session_state.get('auth_user', '')}")
             if st.button("ログアウト", key="btn_logout"):
                 st.session_state["authed"] = False
                 st.session_state.pop("auth_user", None)
                 st.rerun()
         return
 
+    # 8) ログインフォーム（Enter送信OK）
     st.subheader("ログイン")
-
-    # ✅ Enterで送信できるのは st.form_submit_button のおかげ（ここが大事）
     with st.form("login_form", clear_on_submit=False):
         username = st.text_input("ユーザー名", key="login_username")
         password = st.text_input("パスワード", type="password", key="login_password")
@@ -56,4 +66,5 @@ u, p = load_credentials(os.environ, secrets_dict)
             st.error("ユーザー名/パスワードが違います")
             st.stop()
     else:
+        # フォーム未送信時は以降のUIを止める（未認証で下に進ませない）
         st.stop()
