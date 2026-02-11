@@ -1,81 +1,11 @@
 # app.py（先頭）
-
-import os
 import streamlit as st
-
 st.set_page_config(page_title="月次入力", layout="wide")
 
+from auth_guard import auth_guard
+auth_guard()
 
-def _secret(path: str, default: str = "") -> str:
-    """secrets.toml が無い環境でも落ちないように読む"""
-    try:
-        cur = st.secrets
-        for k in path.split("."):
-            cur = cur[k]
-        return str(cur)
-    except Exception:
-        return default
-
-
-def require_login():
-    # --- 本番ガード：Railway上ではログイン回避を絶対に許可しない ---
-    is_railway = any([
-        os.getenv("RAILWAY_ENVIRONMENT"),
-        os.getenv("RAILWAY_PROJECT_ID"),
-        os.getenv("RAILWAY_SERVICE_ID"),
-    ])
-
-    # ローカル開発だけログイン不要を許可（DEV_NO_AUTH=1）
-    if (not is_railway) and os.getenv("DEV_NO_AUTH") == "1":
-        return
-
-    u = os.getenv("APP_USERNAME") or _secret("auth.username", "")
-    p = os.getenv("APP_PASSWORD") or _secret("auth.password", "")
-
-    # ローカルで環境変数もsecretsも無いなら、ログインをスキップ（開発用）
-    if (not is_railway) and (not u and not p):
-        return
-
-    if not u or not p:
-        st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
-        st.stop()
-
-    if "authed" not in st.session_state:
-        st.session_state["authed"] = False
-
-    # ログイン済み：サイドバーにログアウトだけ出す
-    if st.session_state["authed"]:
-        with st.sidebar:
-            st.success(f"ログイン中: {st.session_state.get('auth_user','')}")
-            if st.button("ログアウト", key="btn_logout"):
-                st.session_state["authed"] = False
-                st.session_state.pop("auth_user", None)
-                st.rerun()
-        return
-
-    # --- 未ログイン：ここでログイン画面を表示して、ここで止める ---
-    st.subheader("ログイン")
-
-    with st.form("login_form", clear_on_submit=False):
-        username = st.text_input("ユーザー名", key="login_username")
-        password = st.text_input("パスワード", type="password", key="login_password")
-        submitted = st.form_submit_button("ログイン")
-
-    if submitted:
-        if username == u and password == p:
-            st.session_state["authed"] = True
-            st.session_state["auth_user"] = username
-            st.rerun()
-        else:
-            st.error("ユーザー名/パスワードが違います")
-
-    st.stop()
-
-
-# ここで認証（ログイン済みになるまで下に進まない）
-require_login()
-
-# ここから先は今まで通りの imports / 本体処理
+import os
 import sys
 import psycopg2
 from psycopg2.extras import execute_values

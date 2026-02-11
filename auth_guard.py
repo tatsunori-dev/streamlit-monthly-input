@@ -1,43 +1,52 @@
 # auth_guard.py
 import os
 import streamlit as st
+from auth_core import should_skip_auth, load_credentials, validate
 
+def auth_guard():
+    # スキップ条件（ローカルのみ）
+    if should_skip_auth(os.environ):
+        return
 
-def auth_guard() -> bool:
-    """
-    認証ガード（テスト仕様準拠）
-    - DEV_NO_AUTH=1 のときは認証バイパス（authed=True で通す）
-    - session_state["authed"] が True なら通す
-    - 未認証ならログインUI表示
-      - Login ボタン押下 & 正しいID/PW -> authed=True で通す
-      - それ以外 -> st.stop()
-    """
-    # タイトルは常に呼ばれる（test_auth_guard_calls_title 対応）
-    st.title("月次入力（Postgres / Supabase）")
+    u, p = load_credentials(os.environ, dict(st.secrets) if hasattr(st, "secrets") else None)
 
-    # 1) ローカル開発用：認証スキップ
-    if os.getenv("DEV_NO_AUTH") == "1":
-        st.session_state["authed"] = True
-        return True
+    # ローカルで env も secrets も無いならスキップ（開発用）
+    # ※これ要らないなら消してOK（より厳格になる）
+    if (not u and not p) and (not os.environ.get("RAILWAY_ENVIRONMENT")):
+        return
 
-    # 2) 既に認証済み
-    if st.session_state.get("authed") is True:
-        return True
+    if not u or not p:
+        st.error("認証設定がありません（APP_USERNAME/APP_PASSWORD または secrets.toml を設定）")
+        st.stop()
 
-    # 3) 未認証：ログインUI
-    app_user = os.getenv("APP_USERNAME", "")
-    app_pass = os.getenv("APP_PASSWORD", "")
+    if "authed" not in st.session_state:
+        st.session_state["authed"] = False
 
-    username = st.text_input("Username", key="login_username")
-    password = st.text_input("Password", key="login_password", type="password")
+    # ログイン済み
+    if st.session_state["authed"]:
+        with st.sidebar:
+            st.success(f"ログイン中: {st.session_state.get('auth_user','')}")
+            if st.button("ログアウト", key="btn_logout"):
+                st.session_state["authed"] = False
+                st.session_state.pop("auth_user", None)
+                st.rerun()
+        return
 
-    if st.button("Login"):
-        if username == app_user and password == app_pass and app_user != "" and app_pass != "":
+    st.subheader("ログイン")
+
+    # ✅ Enterで送信できるのは st.form_submit_button のおかげ（ここが大事）
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input("ユーザー名", key="login_username")
+        password = st.text_input("パスワード", type="password", key="login_password")
+        submitted = st.form_submit_button("ログイン")
+
+    if submitted:
+        if validate(username, password, u, p):
             st.session_state["authed"] = True
-            return True
+            st.session_state["auth_user"] = username
+            st.rerun()
         else:
-            st.error("ログインに失敗しました")
+            st.error("ユーザー名/パスワードが違います")
             st.stop()
-
-    # Login ボタンが押されてない場合も、未認証なので止める（テストがここを期待）
-    st.stop()
+    else:
+        st.stop()
