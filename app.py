@@ -15,15 +15,22 @@ def _secret(path: str, default: str = "") -> str:
         return default
 
 def require_login():
-    # ローカル開発はログイン不要（MacでだけOFFにしたいならこのフラグを使う）
-    if os.getenv("DEV_NO_AUTH") == "1":
+    # --- 本番ガード：Railway上ではログイン回避を絶対に許可しない ---
+    is_railway = any([
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("RAILWAY_PROJECT_ID"),
+        os.getenv("RAILWAY_SERVICE_ID"),
+    ])
+
+    # ローカル開発だけログイン不要を許可（DEV_NO_AUTH=1）
+    if (not is_railway) and os.getenv("DEV_NO_AUTH") == "1":
         return
 
     u = os.getenv("APP_USERNAME") or _secret("auth.username", "")
     p = os.getenv("APP_PASSWORD") or _secret("auth.password", "")
 
     # ローカルで環境変数もsecretsも無いなら、ログインをスキップ（開発用）
-    if not u and not p:
+    if (not is_railway) and (not u and not p):
         return
 
     if not u or not p:
