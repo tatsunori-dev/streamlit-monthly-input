@@ -32,3 +32,9 @@
 ## メモ（任意）
 - `.venv/` は Git 管理しない（`.gitignore` に入っていればOK）
 - `pip freeze > requirements.txt` は依存関係を追加した時だけやればOK
+
+## 障害/復旧チェック（最小）
+- まず「📦 全データCSV」をDL（バックアップ確保）
+- Railway Variables: SUPABASE_DB_URL / APP_USERNAME / APP_PASSWORD を確認
+- Supabase: テーブル records が存在するか確認（なければアプリ起動で自動作成）
+- Railway Logs で [DB-ERROR] を検索して、失敗した処理ラベルを確認
