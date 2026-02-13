@@ -1065,7 +1065,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
         lines.append("データなし")
     else:
         for i, (_, r) in enumerate(worst5.sort_values("hourly", ascending=True).iterrows(), start=1):
-            lines.append(f"--- WORST{i} ---")
+            lines.append(f"[WORST{i}]")
             lines.append(fmt_breakdown(r))
 
     # -----------------------------
@@ -1281,7 +1281,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
         lines.append("データなし")
     else:
         for i, (_, r) in enumerate(worst5.sort_values("hourly", ascending=True).iterrows(), start=1):
-            lines.append(f"--- WORST{i} ---")
+            lines.append(f"[WORST{i}]")
             lines.append(fmt_breakdown(r))
 
     return "\n".join(lines)
