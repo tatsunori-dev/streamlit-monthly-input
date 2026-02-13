@@ -61,6 +61,7 @@ def run_db(label: str, fn: Callable[[], T], default: T | None = None) -> T | Non
     except Exception as e:
         st.error(f"DBエラー: {label} に失敗しました。設定や接続状態を確認してください。")
         st.caption(f"詳細: {type(e).__name__}: {e}")
+        sys.stderr.write(f"[DB-ERROR] {label}: {type(e).__name__}: {e}\n"); sys.stderr.flush()
         st.exception(e)  # Railway Logsにも出る
         return default
 
