@@ -1276,13 +1276,25 @@ if not df.empty:
     dtmp["日付"] = pd.to_datetime(dtmp["日付"], errors="coerce")
     months = sorted(dtmp.dropna(subset=["日付"])["日付"].dt.to_period("M").astype(str).unique().tolist())
 
+years = []
+if not df.empty:
+    ytmp = df.copy()
+    ytmp["日付"] = pd.to_datetime(ytmp["日付"], errors="coerce")
+    years = sorted(ytmp.dropna(subset=["日付"])["日付"].dt.year.unique().tolist())
+
 month_str = st.selectbox("対象月（YYYY-MM）", months) if months else None
+default_year = date.today().year
+sel_year = st.selectbox(
+    "対象年（YYYY）",
+    years,
+    index=(years.index(default_year) if default_year in years else (len(years) - 1))
+) if years else default_year
 
 c1, c2 = st.columns(2)
 with c1:
     gen_m = st.button("月次レポ生成")
 with c2:
-    gen_y = st.button("年次レポ生成（今年）")
+    gen_y = st.button("年次レポ生成")
 
 if gen_m and month_str:
     rep = build_month_report_full(df, month_str)
@@ -1291,8 +1303,7 @@ if gen_m and month_str:
     st.session_state["report_kind"] = "month"
 
 if gen_y:
-    y = date.today().year
-    rep = build_year_report_full(df, y)
+    rep = build_year_report_full(df, int(sel_year))
     st.session_state["report_text"] = rep
     st.session_state["pace_info"] = None  # 年次ではペース判定は出さない
     st.session_state["report_kind"] = "year"
