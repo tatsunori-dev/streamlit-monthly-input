@@ -75,6 +75,8 @@ def _pg_url() -> str:
         raise RuntimeError("SUPABASE_DB_URL が未設定だよ（Railway Variables / ローカルsecrets を確認）")
     if "sslmode=" not in url:
         url += ("&" if "?" in url else "?") + "sslmode=require"
+    if "connect_timeout=" not in url:
+        url += ("&" if "?" in url else "?") + "connect_timeout=5"
     return url
 
 def _pg_connect():
