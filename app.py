@@ -1039,31 +1039,33 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     if top5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
-        for _, r in top5.iterrows():
-            lines.append(fmt_day_row(r))
+        for i, (_, r) in enumerate(top5.iterrows(), start=1):
+            lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
-    lines.append("【全体時給 ワースト5】")
+    lines.append("【全体時給 WORST5】")
     if worst5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
-        for _, r in worst5.iterrows():
-            lines.append(fmt_day_row(r))
-   
+        for i, (_, r) in enumerate(worst5.iterrows(), start=1):
+            lines.append(f"{i}. {fmt_day_row(r)}")
+
     lines.append("")
     lines.append("【TOP5内訳】")
     if top5.empty:
         lines.append("データなし")
     else:
-        for _, r in top5.sort_values("hourly", ascending=False).iterrows():
+        for i, (_, r) in enumerate(top5.sort_values("hourly", ascending=False).iterrows(), start=1):
+            lines.append(f"--- TOP{i} ---")
             lines.append(fmt_breakdown(r))
 
     lines.append("")
-    lines.append("【ワースト5内訳】")
+    lines.append("【WORST5内訳】")
     if worst5.empty:
         lines.append("データなし")
     else:
-        for _, r in worst5.sort_values("hourly", ascending=True).iterrows():
+        for i, (_, r) in enumerate(worst5.sort_values("hourly", ascending=True).iterrows(), start=1):
+            lines.append(f"--- WORST{i} ---")
             lines.append(fmt_breakdown(r))
 
     # -----------------------------
@@ -1243,7 +1245,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
             lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
-    lines.append("【全体時給 ワースト5（年間・日次）】")
+    lines.append("【全体時給 WORST5 （年間・日次）】")
     if worst5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
@@ -1260,7 +1262,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
             lines.append(fmt_breakdown(r))
 
     lines.append("")
-    lines.append("【ワースト5内訳（年間・日次）】")
+    lines.append("【WORST5内訳（年間・日次）】")
     if worst5.empty:
         lines.append("データなし")
     else:
@@ -1282,18 +1284,19 @@ if not df.empty:
     ytmp["日付"] = pd.to_datetime(ytmp["日付"], errors="coerce")
     years = sorted(ytmp.dropna(subset=["日付"])["日付"].dt.year.unique().tolist())
 
-month_str = st.selectbox("対象月（YYYY-MM）", months) if months else None
-default_year = date.today().year
-sel_year = st.selectbox(
-    "対象年（YYYY）",
-    years,
-    index=(years.index(default_year) if default_year in years else (len(years) - 1))
-) if years else default_year
+cL, cR = st.columns(2)
 
-c1, c2 = st.columns(2)
-with c1:
+with cL:
+    month_str = st.selectbox("対象月（YYYY-MM）", months) if months else None
     gen_m = st.button("月次レポ生成")
-with c2:
+
+with cR:
+    default_year = date.today().year
+    sel_year = st.selectbox(
+        "対象年（YYYY）",
+        years,
+        index=(years.index(default_year) if default_year in years else (len(years) - 1))
+    ) if years else default_year
     gen_y = st.button("年次レポ生成")
 
 if gen_m and month_str:
