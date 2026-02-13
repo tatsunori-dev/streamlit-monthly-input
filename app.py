@@ -1214,22 +1214,36 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
     lines.append(f"他   : 売上 {other_sales:,} 円 / 時間 {other_h:g} h / 時給 {other_hourly:,} 円")
 
     # -----------------------------
-    # 月別サマリ（売上/時間/時給）
+    # 月別サマリ（売上/時間/時給 + 稼働日数/稼働日平均h）
     # -----------------------------
     mtmp = tmp.copy()
     mtmp["月"] = mtmp["日付"].dt.to_period("M").astype(str)
+
+    # 稼働日フラグ（時間>0）
+    mtmp["is_workday"] = (mtmp["合計h_num"] > 0).astype(int)
+
     g = mtmp.groupby("月", as_index=False).agg(
         sales=("合計売上_num", "sum"),
         hours=("合計h_num", "sum"),
+        work_days=("is_workday", "sum"),
     )
     g["sales"] = g["sales"].astype(int)
     g["hours"] = g["hours"].astype(float)
+    g["work_days"] = g["work_days"].astype(int)
     g["hourly"] = g.apply(lambda r: int(r["sales"] / r["hours"]) if r["hours"] > 0 else 0, axis=1)
+    g["avg_workday_h"] = g.apply(lambda r: (r["hours"] / r["work_days"]) if r["work_days"] > 0 else 0.0, axis=1)
 
     lines.append("")
-    lines.append("【月別サマリ（売上/時間/時給）】")
+    lines.append("【月別サマリ（売上/時間/時給/稼働日数/稼働日平均h）】")
     for _, r in g.sort_values("月").iterrows():
-        lines.append(f"{r['月']}: 売上 {int(r['sales']):,} 円 / 時間 {float(r['hours']):g} h / 時給 {int(r['hourly']):,} 円")
+        lines.append(
+            f"{r['月']}: "
+            f"売上 {int(r['sales']):,} 円 / "
+            f"時間 {float(r['hours']):g} h / "
+            f"時給 {int(r['hourly']):,} 円 / "
+            f"稼働 {int(r['work_days'])} 日 / "
+            f"稼働日平均 {float(r['avg_workday_h']):.2f} h"
+        )
 
     lines.append("")
     lines.append("【稼働時間（年間）】")
@@ -1245,7 +1259,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
             lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
-    lines.append("【全体時給 WORST5 （年間・日次）】")
+    lines.append("【全体時給 WORST5（年間・日次）】")
     if worst5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
