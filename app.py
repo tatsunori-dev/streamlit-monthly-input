@@ -1211,6 +1211,24 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
     lines.append(f"Fresh: 売上 {fresh_sales:,} 円 / 時間 {fresh_h:g} h / 時給 {fresh_hourly:,} 円")
     lines.append(f"他   : 売上 {other_sales:,} 円 / 時間 {other_h:g} h / 時給 {other_hourly:,} 円")
 
+    # -----------------------------
+    # 月別サマリ（売上/時間/時給）
+    # -----------------------------
+    mtmp = tmp.copy()
+    mtmp["月"] = mtmp["日付"].dt.to_period("M").astype(str)
+    g = mtmp.groupby("月", as_index=False).agg(
+        sales=("合計売上_num", "sum"),
+        hours=("合計h_num", "sum"),
+    )
+    g["sales"] = g["sales"].astype(int)
+    g["hours"] = g["hours"].astype(float)
+    g["hourly"] = g.apply(lambda r: int(r["sales"] / r["hours"]) if r["hours"] > 0 else 0, axis=1)
+
+    lines.append("")
+    lines.append("【月別サマリ（売上/時間/時給）】")
+    for _, r in g.sort_values("月").iterrows():
+        lines.append(f"{r['月']}: 売上 {int(r['sales']):,} 円 / 時間 {float(r['hours']):g} h / 時給 {int(r['hourly']):,} 円")
+
     lines.append("")
     lines.append("【稼働時間（年間）】")
     lines.append(f"稼働日数: {work_days} 日 / 稼働日平均: {avg_workday_h:.2f} h/日")
@@ -1221,23 +1239,24 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
     if top5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
-        for _, r in top5.iterrows():
-            lines.append(fmt_day_row(r))
+        for i, (_, r) in enumerate(top5.iterrows(), start=1):
+            lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
     lines.append("【全体時給 ワースト5（年間・日次）】")
     if worst5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
-        for _, r in worst5.iterrows():
-            lines.append(fmt_day_row(r))
+        for i, (_, r) in enumerate(worst5.iterrows(), start=1):
+            lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
     lines.append("【TOP5内訳（年間・日次）】")
     if top5.empty:
         lines.append("データなし")
     else:
-        for _, r in top5.sort_values("hourly", ascending=False).iterrows():
+        for i, (_, r) in enumerate(top5.sort_values("hourly", ascending=False).iterrows(), start=1):
+            lines.append(f"--- TOP{i} ---")
             lines.append(fmt_breakdown(r))
 
     lines.append("")
@@ -1245,7 +1264,8 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
     if worst5.empty:
         lines.append("データなし")
     else:
-        for _, r in worst5.sort_values("hourly", ascending=True).iterrows():
+        for i, (_, r) in enumerate(worst5.sort_values("hourly", ascending=True).iterrows(), start=1):
+            lines.append(f"--- WORST{i} ---")
             lines.append(fmt_breakdown(r))
 
     return "\n".join(lines)
