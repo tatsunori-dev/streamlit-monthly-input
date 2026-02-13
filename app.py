@@ -967,6 +967,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
 
         # ---- 表示（今月だけ）----
         lines.append("")
+        lines.append("【月間目標進捗】")
         lines.append(f"月40万: {ok_mark}（{sum_sales:,}円 / あと{remain_sales:,}円）")
 
         if remain_days > 0:
@@ -1076,6 +1077,49 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     lines.append(f"{season}：時給（合格{ok:,}/良い{good:,}/上振れ{bubble:,}）: {hourly_grade}（{hourly:,}円/h）")
 
     return "\n".join(lines)
+def calc_month_pace(df: pd.DataFrame, month_str: str, month_target: int = 400000) -> dict:
+    """
+    月40万の“暦日按分ペース”判定用
+    - ideal_cum: 今日時点の理想累計（暦日按分）
+    - actual: 実績累計（月合計売上）
+    - diff: 実績 - 理想
+    - show: 当月だけ表示
+    """
+    tmp = df.copy()
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp = tmp.dropna(subset=["日付"])
+    tmp["月"] = tmp["日付"].dt.to_period("M").astype(str)
+    tmp = tmp[tmp["月"] == month_str].copy()
+
+    if tmp.empty:
+        return {"show": False}
+
+    tmp["合計売上_num"] = pd.to_numeric(tmp["合計売上"], errors="coerce").fillna(0)
+    actual = int(tmp["合計売上_num"].sum())
+
+    y, mo = map(int, month_str.split("-"))
+    today = date.today()
+    is_current_month = (today.year == y) and (today.month == mo)
+    if not is_current_month:
+        return {"show": False}
+
+    last_day = calendar.monthrange(y, mo)[1]
+    day_idx = max(1, min(today.day, last_day))
+
+    ideal_cum = int(month_target * (day_idx / last_day))
+    diff = actual - ideal_cum
+    ok = actual >= ideal_cum
+
+    return {
+        "show": True,
+        "ok": ok,
+        "ideal_cum": ideal_cum,
+        "actual": actual,
+        "diff": diff,
+        "day_idx": day_idx,
+        "last_day": last_day,
+        "month_target": month_target,
+    }
 
 months = []
 if not df.empty:
@@ -1089,16 +1133,34 @@ gen = st.button("月次レポ生成")
 if gen and month_str:
     rep = build_month_report_full(df, month_str)
     st.session_state["report_text"] = rep
+    st.session_state["pace_info"] = calc_month_pace(df, month_str, month_target=400000)
 
 report_text = st.session_state.get("report_text", "")
+pace_info = st.session_state.get("pace_info", None)
+
 if report_text:
+    # 月間目標進捗（ペース判定：当月のみ）
+    if isinstance(pace_info, dict) and pace_info.get("show"):
+        st.subheader("月間目標進捗")
+        mark = "⭕️" if pace_info["ok"] else "❌"
+        diff = pace_info["diff"]
+        sign = "+" if diff >= 0 else ""
+        msg = (
+            f"ペース判定: {mark}  "
+            f"（理想累計 {pace_info['ideal_cum']:,}円 / 実績 {pace_info['actual']:,}円 / 差分 {sign}{diff:,}円）"
+        )
+        if pace_info["ok"]:
+            st.success(msg)  # 緑
+        else:
+            st.error(msg)    # 赤
+
     st.markdown("""
     <style>
-    /* レポ（st.code）の文字を少し大きく */
     div[data-testid="stCodeBlock"] pre {
       font-size: 16px !important;
       line-height: 1.4 !important;
     }
     </style>
     """, unsafe_allow_html=True)
+
     st.code(report_text, language="text")
