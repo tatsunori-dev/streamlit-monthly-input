@@ -932,7 +932,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     avg_calendar_h = (sum_h / last_day) if last_day > 0 else 0.0
 
     lines.append("")
-    lines.append("【稼働時間（平均）】")
+    lines.append("【稼働時間（当月）】")
     lines.append(f"稼働日数: {work_days} 日 / 稼働日平均: {avg_workday_h:.2f} h/日")
     lines.append(f"暦日平均（休み込み）: {avg_calendar_h:.2f} h/日（{last_day}日で割り算）")
 
@@ -1035,7 +1035,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
         )
 
     lines.append("")
-    lines.append("【全体時給 TOP5】")
+    lines.append("【全体時給 TOP5（当月・日次）】")
     if top5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
@@ -1043,7 +1043,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
             lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
-    lines.append("【全体時給 WORST5】")
+    lines.append("【全体時給 WORST5（当月・日次）】")
     if worst5.empty:
         lines.append("データなし（時間が0の行しかない）")
     else:
@@ -1051,16 +1051,16 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
             lines.append(f"{i}. {fmt_day_row(r)}")
 
     lines.append("")
-    lines.append("【TOP5内訳】")
+    lines.append("【TOP5内訳（当月・日次）】")
     if top5.empty:
         lines.append("データなし")
     else:
         for i, (_, r) in enumerate(top5.sort_values("hourly", ascending=False).iterrows(), start=1):
-            lines.append(f"--- TOP{i} ---")
+            lines.append(f"[TOP{i}]")
             lines.append(fmt_breakdown(r))
 
     lines.append("")
-    lines.append("【WORST5内訳】")
+    lines.append("【WORST5内訳（当月・日次）】")
     if worst5.empty:
         lines.append("データなし")
     else:
@@ -1272,7 +1272,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
         lines.append("データなし")
     else:
         for i, (_, r) in enumerate(top5.sort_values("hourly", ascending=False).iterrows(), start=1):
-            lines.append(f"--- TOP{i} ---")
+            lines.append(f"[TOP{i}]")
             lines.append(fmt_breakdown(r))
 
     lines.append("")
