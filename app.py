@@ -1121,6 +1121,135 @@ def calc_month_pace(df: pd.DataFrame, month_str: str, month_target: int = 400000
         "month_target": month_target,
     }
 
+def build_year_report_full(df: pd.DataFrame, year: int) -> str:
+    tmp = df.copy()
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp = tmp.dropna(subset=["日付"])
+    tmp = tmp[tmp["日付"].dt.year == year].copy()
+
+    if tmp.empty:
+        return f"\n{year}年 データなし\n"
+
+    # 数値化
+    tmp["合計売上_num"] = pd.to_numeric(tmp["合計売上"], errors="coerce").fillna(0)
+    tmp["合計h_num"] = pd.to_numeric(tmp["合計h"], errors="coerce").fillna(0)
+
+    client_cols = [c for c in CLIENT_COLS if c in tmp.columns]
+    for c in client_cols:
+        tmp[c] = pd.to_numeric(tmp[c], errors="coerce").fillna(0)
+
+    # 年合計
+    sum_sales = int(tmp["合計売上_num"].sum())
+    sum_h = float(tmp["合計h_num"].sum())
+    hourly = int(sum_sales / sum_h) if sum_h > 0 else 0
+
+    # Flex / Fresh / 他
+    flex_sales = int(tmp["Afrex"].sum()) if "Afrex" in tmp.columns else 0
+    fresh_sales = int(tmp["Afresh"].sum()) if "Afresh" in tmp.columns else 0
+
+    flex_h = float(pd.to_numeric(tmp.get("frex h", 0), errors="coerce").fillna(0).sum()) if "frex h" in tmp.columns else 0.0
+    fresh_h = float(pd.to_numeric(tmp.get("fresh h", 0), errors="coerce").fillna(0).sum()) if "fresh h" in tmp.columns else 0.0
+
+    other_sales = max(0, sum_sales - flex_sales - fresh_sales)
+    other_h = max(0.0, sum_h - flex_h - fresh_h)
+
+    flex_hourly = int(flex_sales / flex_h) if flex_h > 0 else 0
+    fresh_hourly = int(fresh_sales / fresh_h) if fresh_h > 0 else 0
+    other_hourly = int(other_sales / other_h) if other_h > 0 else 0
+
+    # 稼働時間（平均）
+    work_days = int((tmp["合計h_num"] > 0).sum())
+    avg_workday_h = (sum_h / work_days) if work_days > 0 else 0.0
+
+    days_in_year = 366 if calendar.isleap(year) else 365
+    avg_calendar_h = (sum_h / days_in_year) if days_in_year > 0 else 0.0
+
+    # 日次の時給（0hは除外）
+    tmp["hourly"] = tmp.apply(
+        lambda r: (r["合計売上_num"] / r["合計h_num"]) if r["合計h_num"] > 0 else None,
+        axis=1
+    )
+    day = tmp.dropna(subset=["hourly"]).copy()
+    day["hourly_int"] = day["hourly"].astype(int)
+
+    top5 = day.sort_values("hourly", ascending=False).head(5)
+    worst5 = day.sort_values("hourly", ascending=True).head(5)
+
+    def fmt_day_row(r):
+        dstr = r["日付"].strftime("%Y/%m/%d")
+        sales = int(r["合計売上_num"])
+        h = float(r["合計h_num"])
+        hr = int(r["hourly"])
+        hh = f"{h:g}"
+        return f"{dstr}: {hr:,} 円（{sales:,}/{hh}h）"
+
+    def fmt_breakdown(r):
+        dstr = r["日付"].strftime("%Y/%m/%d")
+        sales = int(r["合計売上_num"])
+        h = float(r["合計h_num"])
+        hr = int(r["hourly"]) if r["hourly"] is not None else 0
+
+        parts = []
+        for c in client_cols:
+            v = int(r.get(c, 0))
+            if v != 0:
+                parts.append((c, v))
+        parts.sort(key=lambda x: x[1], reverse=True)
+
+        inner = " / ".join([f"{k} {v:,}" for k, v in parts]) if parts else "（内訳なし）"
+        return (
+            f"{dstr}  売上:{sales:,}  時間:{h:g}h  時給:{hr:,}円\n"
+            f"  内訳: {inner}"
+        )
+
+    lines = []
+    lines.append(f"【{year} 年次レポート】")
+    lines.append("")
+    lines.append("【年合計（売上/時間/時給）】")
+    lines.append(f"全体: 売上 {sum_sales:,} 円 / 時間 {sum_h:g} h / 時給 {hourly:,} 円")
+    lines.append(f"Flex : 売上 {flex_sales:,} 円 / 時間 {flex_h:g} h / 時給 {flex_hourly:,} 円")
+    lines.append(f"Fresh: 売上 {fresh_sales:,} 円 / 時間 {fresh_h:g} h / 時給 {fresh_hourly:,} 円")
+    lines.append(f"他   : 売上 {other_sales:,} 円 / 時間 {other_h:g} h / 時給 {other_hourly:,} 円")
+
+    lines.append("")
+    lines.append("【稼働時間（年間）】")
+    lines.append(f"稼働日数: {work_days} 日 / 稼働日平均: {avg_workday_h:.2f} h/日")
+    lines.append(f"暦日平均（休み込み）: {avg_calendar_h:.2f} h/日（{days_in_year}日で割り算）")
+
+    lines.append("")
+    lines.append("【全体時給 TOP5（年間・日次）】")
+    if top5.empty:
+        lines.append("データなし（時間が0の行しかない）")
+    else:
+        for _, r in top5.iterrows():
+            lines.append(fmt_day_row(r))
+
+    lines.append("")
+    lines.append("【全体時給 ワースト5（年間・日次）】")
+    if worst5.empty:
+        lines.append("データなし（時間が0の行しかない）")
+    else:
+        for _, r in worst5.iterrows():
+            lines.append(fmt_day_row(r))
+
+    lines.append("")
+    lines.append("【TOP5内訳（年間・日次）】")
+    if top5.empty:
+        lines.append("データなし")
+    else:
+        for _, r in top5.sort_values("hourly", ascending=False).iterrows():
+            lines.append(fmt_breakdown(r))
+
+    lines.append("")
+    lines.append("【ワースト5内訳（年間・日次）】")
+    if worst5.empty:
+        lines.append("データなし")
+    else:
+        for _, r in worst5.sort_values("hourly", ascending=True).iterrows():
+            lines.append(fmt_breakdown(r))
+
+    return "\n".join(lines)
+
 months = []
 if not df.empty:
     dtmp = df.copy()
@@ -1128,19 +1257,33 @@ if not df.empty:
     months = sorted(dtmp.dropna(subset=["日付"])["日付"].dt.to_period("M").astype(str).unique().tolist())
 
 month_str = st.selectbox("対象月（YYYY-MM）", months) if months else None
-gen = st.button("月次レポ生成")
 
-if gen and month_str:
+c1, c2 = st.columns(2)
+with c1:
+    gen_m = st.button("月次レポ生成")
+with c2:
+    gen_y = st.button("年次レポ生成（今年）")
+
+if gen_m and month_str:
     rep = build_month_report_full(df, month_str)
     st.session_state["report_text"] = rep
     st.session_state["pace_info"] = calc_month_pace(df, month_str, month_target=400000)
+    st.session_state["report_kind"] = "month"
+
+if gen_y:
+    y = date.today().year
+    rep = build_year_report_full(df, y)
+    st.session_state["report_text"] = rep
+    st.session_state["pace_info"] = None  # 年次ではペース判定は出さない
+    st.session_state["report_kind"] = "year"
 
 report_text = st.session_state.get("report_text", "")
 pace_info = st.session_state.get("pace_info", None)
+report_kind = st.session_state.get("report_kind", "month")
 
 if report_text:
     # 月間目標進捗（ペース判定：当月のみ）
-    if isinstance(pace_info, dict) and pace_info.get("show"):
+    if report_kind == "month" and isinstance(pace_info, dict) and pace_info.get("show"):
         st.subheader("月間目標進捗")
         mark = "⭕️" if pace_info["ok"] else "❌"
         diff = pace_info["diff"]
