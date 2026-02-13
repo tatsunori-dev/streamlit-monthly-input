@@ -82,3 +82,14 @@ Browser → Streamlit（Railway）→ Supabase Postgres
 
 ## 運用メモ（重要）
 - 使わない時は Railway 側で Remove（停止）してクレジット消費を抑える
+
+## 技術スタック
+
+- Frontend / UI: Streamlit
+- Backend: Python 3.12
+- Database: Supabase（PostgreSQL）
+- ORM / Driver: psycopg2
+- Data Processing: pandas
+- Hosting: Railway
+- Auth: 独自簡易認証（環境変数 / secrets管理）
+- Version Control: Git / GitHub
