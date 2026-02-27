@@ -61,10 +61,10 @@ pip install -r requirements.txt
 DEV_NO_AUTH=1 streamlit run app.py
 ```
 
-## Deploy（Railway）
-- https://streamlit-monthly-input-production.up.railway.app/
+## Deploy（Streamlit Community Cloud）
+- https://monthly-input-app.streamlit.app
 
-## 環境変数（Railway Variables）
+## 環境変数（Streamlit Secrets）
 必須：
 - SUPABASE_DB_URL
 - APP_USERNAME
@@ -74,14 +74,11 @@ DEV_NO_AUTH=1 streamlit run app.py
 - DEV_NO_AUTH=1
 
 ## 構成（ざっくり）
-Browser → Streamlit（Railway）→ Supabase Postgres
+Browser → Streamlit（Streamlit Community Cloud）→ Supabase Postgres
 
 ## バックアップ運用（おすすめ）
 - 月1回「全データCSV」をダウンロードして保管
 - 必要ならCSVインポートで復元
-
-## 運用メモ（重要）
-- 使わない時は Railway 側で Remove（停止）してクレジット消費を抑える
 
 ## 技術スタック
 
@@ -90,6 +87,6 @@ Browser → Streamlit（Railway）→ Supabase Postgres
 - Database: Supabase（PostgreSQL）
 - ORM / Driver: psycopg2
 - Data Processing: pandas
-- Hosting: Railway
+- Hosting  Streamlit Community Cloud
 - Auth: 独自簡易認証（環境変数 / secrets管理）
 - Version Control: Git / GitHub
