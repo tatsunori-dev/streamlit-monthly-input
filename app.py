@@ -651,141 +651,6 @@ else:
 # -----------------------------
 # バックアップ/復元（CSV → DB）
 # -----------------------------
-st.subheader("バックアップ / 復元（CSV → DB）")
-st.caption("⚠ インポートは上書き保存（同日なら更新）になります。実行前に全データCSVを手元に保存推奨。")
-
-# uploader の表示ファイルも消すための世代
-if "csv_up_ver" not in st.session_state:
-    st.session_state["csv_up_ver"] = 0
-
-up_file = st.file_uploader(
-    "CSVを選択（monthly_all_... または monthly_YYYY-MM_...）",
-    type=["csv"],
-    key=f"csv_upload_{st.session_state['csv_up_ver']}",
-)
-
-# ここで import_df を保持してボタン押下時に参照できるようにする（rerun対策）
-if "import_df" not in st.session_state:
-    st.session_state["import_df"] = None
-if "import_months" not in st.session_state:
-    st.session_state["import_months"] = []
-if "import_csv_rows" not in st.session_state:
-    st.session_state["import_csv_rows"] = 0
-if "import_minmax" not in st.session_state:
-    st.session_state["import_minmax"] = ("", "")
-
-if up_file is not None:
-    try:
-        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8-sig")
-    except Exception:
-        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8")
-
-    import_df = import_df.fillna("")
-
-    if "日付" not in import_df.columns:
-        st.error("CSVに『日付』列がありません。正しいCSVを選んでください。")
-        st.session_state["import_df"] = None
-    else:
-        # 列を揃える
-        for c in COLUMNS:
-            if c not in import_df.columns:
-                import_df[c] = ""
-        import_df = import_df[COLUMNS]
-
-        # 情報表示（対象月/件数/日付範囲）
-        dts = pd.to_datetime(import_df["日付"], errors="coerce")
-        months = sorted(dts.dropna().dt.strftime("%Y-%m").unique().tolist())
-        min_d = dts.min()
-        max_d = dts.max()
-        min_s = str(min_d.date()) if pd.notna(min_d) else "-"
-        max_s = str(max_d.date()) if pd.notna(max_d) else "-"
-
-        st.session_state["import_df"] = import_df
-        st.session_state["import_months"] = months
-        st.session_state["import_csv_rows"] = int(len(import_df))
-        st.session_state["import_minmax"] = (min_s, max_s)
-
-        st.info(f"CSV: 月={months if months else '-'} / 件数={len(import_df)} 行 / 日付範囲={min_s}〜{max_s}")
-
-        st.write("プレビュー（先頭10行）")
-        st.dataframe(import_df.head(10), width="stretch", hide_index=True)
-
-        st.markdown("### インポート方式")
-        strict_month = st.checkbox(
-            "✅（月次CSV向け）この月のDBを先に全削除してから復元（CSVに無い日付は消える）",
-            value=False,
-            key="strict_month_restore",
-        )
-        st.caption("※ monthly_YYYY-MM.csv を入れるときだけ推奨。monthly_all では使わない。")
-
-        confirm_imp = st.checkbox(
-            "インポートしてOK（上書きが発生する場合があります）",
-            key="confirm_import",
-        )
-
-        if st.button("CSVをDBへインポート（高速/execute_values）", type="primary", key="btn_import"):
-            if not confirm_imp:
-                st.warning("チェックを入れてから押してね")
-            else:
-                def _do_import() -> int:
-                    init_db()
-
-                    df_imp = st.session_state.get("import_df")
-                    if df_imp is None or df_imp.empty:
-                        raise RuntimeError("インポート対象のCSVがありません（もう一度ファイルを選び直してね）")
-
-                    # strict_month の安全チェック
-                    if strict_month:
-                        months2 = st.session_state.get("import_months", [])
-                        if len(months2) != 1:
-                            raise RuntimeError(f"月だけ完全一致は『1ヶ月分のCSV』専用です。検出月={months2}")
-                        month_prefix = months2[0]
-                        ok_del = delete_by_month_prefix(month_prefix)
-                        if not ok_del:
-                            raise RuntimeError("月削除に失敗したためインポート中断")
-
-                    cols = COLUMNS
-                    colnames = ", ".join([f'"{c}"' for c in cols])
-                    update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
-
-                    sql = f'''
-                        INSERT INTO "{TABLE}" ({colnames})
-                        VALUES %s
-                        ON CONFLICT("日付") DO UPDATE SET
-                        {update_set};
-                    '''
-
-                    values_list = [
-                        tuple("" if r.get(c) is None else str(r.get(c, "")) for c in cols)
-                        for _, r in df_imp.iterrows()
-                    ]
-
-                    pcon = _pg_connect()
-                    try:
-                        with pcon.cursor() as cur:
-                            execute_values(cur, sql, values_list, page_size=500)
-                        pcon.commit()
-                        return len(values_list)
-                    finally:
-                        pcon.close()
-
-                n = run_db("CSVインポート（高速/execute_values）", _do_import, default=0)
-                if n > 0:
-                    st.success(f"インポート完了: {n} 行")
-
-                    # UIリセット（ファイル表示も消す）
-                    for k in ["confirm_import", "strict_month_restore", "btn_import", "import_df", "import_months", "import_csv_rows", "import_minmax"]:
-                        st.session_state.pop(k, None)
-                    st.session_state["csv_up_ver"] += 1
-
-                    st.rerun()
-else:
-    st.caption("CSVを選ぶと、プレビューとインポートボタンが表示されます。")
-
-# -----------------------------
-# レポ生成（簡易：月次集計）
-# -----------------------------
-# ============================================================
 # 2025年CSV読み込み ── app.py の「レポ生成」セクションの直前に追記
 # ============================================================
 # 貼り付け先:
@@ -1483,3 +1348,138 @@ if report_text:
 
     st.code(report_text, language="text")
 
+st.subheader("バックアップ / 復元（CSV → DB）")
+st.caption("⚠ インポートは上書き保存（同日なら更新）になります。実行前に全データCSVを手元に保存推奨。")
+
+# uploader の表示ファイルも消すための世代
+if "csv_up_ver" not in st.session_state:
+    st.session_state["csv_up_ver"] = 0
+
+up_file = st.file_uploader(
+    "CSVを選択（monthly_all_... または monthly_YYYY-MM_...）",
+    type=["csv"],
+    key=f"csv_upload_{st.session_state['csv_up_ver']}",
+)
+
+# ここで import_df を保持してボタン押下時に参照できるようにする（rerun対策）
+if "import_df" not in st.session_state:
+    st.session_state["import_df"] = None
+if "import_months" not in st.session_state:
+    st.session_state["import_months"] = []
+if "import_csv_rows" not in st.session_state:
+    st.session_state["import_csv_rows"] = 0
+if "import_minmax" not in st.session_state:
+    st.session_state["import_minmax"] = ("", "")
+
+if up_file is not None:
+    try:
+        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8-sig")
+    except Exception:
+        import_df = pd.read_csv(up_file, dtype=str, encoding="utf-8")
+
+    import_df = import_df.fillna("")
+
+    if "日付" not in import_df.columns:
+        st.error("CSVに『日付』列がありません。正しいCSVを選んでください。")
+        st.session_state["import_df"] = None
+    else:
+        # 列を揃える
+        for c in COLUMNS:
+            if c not in import_df.columns:
+                import_df[c] = ""
+        import_df = import_df[COLUMNS]
+
+        # 情報表示（対象月/件数/日付範囲）
+        dts = pd.to_datetime(import_df["日付"], errors="coerce")
+        months = sorted(dts.dropna().dt.strftime("%Y-%m").unique().tolist())
+        min_d = dts.min()
+        max_d = dts.max()
+        min_s = str(min_d.date()) if pd.notna(min_d) else "-"
+        max_s = str(max_d.date()) if pd.notna(max_d) else "-"
+
+        st.session_state["import_df"] = import_df
+        st.session_state["import_months"] = months
+        st.session_state["import_csv_rows"] = int(len(import_df))
+        st.session_state["import_minmax"] = (min_s, max_s)
+
+        st.info(f"CSV: 月={months if months else '-'} / 件数={len(import_df)} 行 / 日付範囲={min_s}〜{max_s}")
+
+        st.write("プレビュー（先頭10行）")
+        st.dataframe(import_df.head(10), width="stretch", hide_index=True)
+
+        st.markdown("### インポート方式")
+        strict_month = st.checkbox(
+            "✅（月次CSV向け）この月のDBを先に全削除してから復元（CSVに無い日付は消える）",
+            value=False,
+            key="strict_month_restore",
+        )
+        st.caption("※ monthly_YYYY-MM.csv を入れるときだけ推奨。monthly_all では使わない。")
+
+        confirm_imp = st.checkbox(
+            "インポートしてOK（上書きが発生する場合があります）",
+            key="confirm_import",
+        )
+
+        if st.button("CSVをDBへインポート（高速/execute_values）", type="primary", key="btn_import"):
+            if not confirm_imp:
+                st.warning("チェックを入れてから押してね")
+            else:
+                def _do_import() -> int:
+                    init_db()
+
+                    df_imp = st.session_state.get("import_df")
+                    if df_imp is None or df_imp.empty:
+                        raise RuntimeError("インポート対象のCSVがありません（もう一度ファイルを選び直してね）")
+
+                    # strict_month の安全チェック
+                    if strict_month:
+                        months2 = st.session_state.get("import_months", [])
+                        if len(months2) != 1:
+                            raise RuntimeError(f"月だけ完全一致は『1ヶ月分のCSV』専用です。検出月={months2}")
+                        month_prefix = months2[0]
+                        ok_del = delete_by_month_prefix(month_prefix)
+                        if not ok_del:
+                            raise RuntimeError("月削除に失敗したためインポート中断")
+
+                    cols = COLUMNS
+                    colnames = ", ".join([f'"{c}"' for c in cols])
+                    update_set = ", ".join([f'"{c}"=EXCLUDED."{c}"' for c in cols if c != "日付"])
+
+                    sql = f'''
+                        INSERT INTO "{TABLE}" ({colnames})
+                        VALUES %s
+                        ON CONFLICT("日付") DO UPDATE SET
+                        {update_set};
+                    '''
+
+                    values_list = [
+                        tuple("" if r.get(c) is None else str(r.get(c, "")) for c in cols)
+                        for _, r in df_imp.iterrows()
+                    ]
+
+                    pcon = _pg_connect()
+                    try:
+                        with pcon.cursor() as cur:
+                            execute_values(cur, sql, values_list, page_size=500)
+                        pcon.commit()
+                        return len(values_list)
+                    finally:
+                        pcon.close()
+
+                n = run_db("CSVインポート（高速/execute_values）", _do_import, default=0)
+                if n > 0:
+                    st.success(f"インポート完了: {n} 行")
+
+                    # UIリセット（ファイル表示も消す）
+                    for k in ["confirm_import", "strict_month_restore", "btn_import", "import_df", "import_months", "import_csv_rows", "import_minmax"]:
+                        st.session_state.pop(k, None)
+                    st.session_state["csv_up_ver"] += 1
+
+                    st.rerun()
+else:
+    st.caption("CSVを選ぶと、プレビューとインポートボタンが表示されます。")
+
+# -----------------------------
+# レポ生成（簡易：月次集計）
+# -----------------------------
+# ============================================================
