@@ -1392,11 +1392,7 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
 
 st.subheader("レポ生成（月次レポ）")
 
-st.subheader("2025年CSV読み込み")
-st.caption("CSVをアップロードすると対象月・対象年に2025年分が追加されます。")
-
 if "df_2025" not in st.session_state:
-    # 起動時に2025_all.csvを自動読み込み
     _csv_path = os.path.join(os.path.dirname(__file__), "2025_all.csv")
     if os.path.exists(_csv_path):
         import io as _io
@@ -1407,28 +1403,8 @@ if "df_2025" not in st.session_state:
         st.session_state["df_2025"] = _auto if not _auto.empty else pd.DataFrame()
     else:
         st.session_state["df_2025"] = pd.DataFrame()
-if "csv_2025_ver" not in st.session_state:
-    st.session_state["csv_2025_ver"] = 0
-
-files_2025 = st.file_uploader(
-    "2025年CSVを選択（複数可・最大12ファイル）",
-    type=["csv"],
-    accept_multiple_files=True,
-    key=f"csv_2025_upload_{st.session_state['csv_2025_ver']}",
-)
-
-if files_2025:
-    with st.spinner("CSVを変換中..."):
-        parsed = parse_2025_csv(files_2025)
-    if parsed.empty:
-        st.error("有効なデータが見つかりませんでした。")
-    else:
-        st.session_state["df_2025"] = parsed
-        dates_2025 = pd.to_datetime(parsed["日付"], errors="coerce")
-        st.success(f"読み込み完了: {len(parsed)} 行 / 期間: {str(dates_2025.min().date())} 〜 {str(dates_2025.max().date())}")
-
 df_2025_loaded = st.session_state.get("df_2025", pd.DataFrame())
-st.write(f"DEBUG: df_2025_loaded rows={len(df_2025_loaded)}")
+
 if not df_2025_loaded.empty:
     df_merged = pd.concat([df, df_2025_loaded], ignore_index=True)
     df_merged["_sort"] = pd.to_datetime(df_merged["日付"], errors="coerce")
@@ -1441,12 +1417,7 @@ if not df_merged.empty:
     dtmp = df_merged.copy()
     dtmp["日付"] = pd.to_datetime(dtmp["日付"], errors="coerce", format="mixed")
     months = sorted(dtmp.dropna(subset=["日付"])["日付"].dt.to_period("M").astype(str).unique().tolist(), reverse=True)
-st.write(f"DEBUG months: {months}")
-st.write(f"DEBUG df_merged rows: {len(df_merged)}, df rows: {len(df)}, df_2025 rows: {len(df_2025_loaded)}")
 sample = df_merged["日付"].head(10).tolist()
-st.write(f"DEBUG 日付サンプル: {sample}")
-st.write(f"DEBUG 2025列名: {list(df_2025_loaded.columns)}")
-st.write(f"DEBUG 2025日付サンプル: {df_2025_loaded.iloc[:,0].head(5).tolist()}")
 
 years = []
 if not df_merged.empty:
