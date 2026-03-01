@@ -785,11 +785,111 @@ else:
 # -----------------------------
 # レポ生成（簡易：月次集計）
 # -----------------------------
-st.subheader("レポ生成（月次レポ）")
+# ============================================================
+# 2025年CSV読み込み ── app.py の「レポ生成」セクションの直前に追記
+# ============================================================
+# 貼り付け先:
+#   st.subheader("レポ生成（月次レポ）") の直前
+# ============================================================
+
+# -----------------------------
+# 2025年CSV専用の取引先（R は存在しない）
+# -----------------------------
+CLIENT_COLS_2025 = ["U", "出", "W", "menu", "しょんぴ", "Afrex", "Afresh", "ハコベル", "pickg", "その他"]
+
+# -----------------------------
+# 2025年CSV → 既存スキーマに変換
+# -----------------------------
+def parse_2025_csv(uploaded_files) -> pd.DataFrame:
+    dfs = []
+    for f in uploaded_files:
+        try:
+            raw = pd.read_csv(f, header=0, dtype=str)
+        except Exception as e:
+            st.warning(f"読み込みスキップ: {f.name} ({e})")
+            continue
+
+        cols = list(raw.columns)
+        if cols[0] == "" or cols[0].startswith("Unnamed"):
+            cols[0] = "日付"
+        raw.columns = cols
+
+        raw = raw[raw["日付"].notna()]
+        raw = raw[raw["日付"].str.match(r"\d{4}/\d{2}/\d{2}", na=False)]
+
+        def nc(s):
+            if pd.isna(s): return None
+            s = str(s).replace(",", "").replace('"', "").strip()
+            try: return float(s)
+            except: return None
+
+        def nci(s):
+            v = nc(s)
+            return int(v) if v is not None else None
+
+        def to_cell_i(v):
+            return "" if (v is None or v == 0) else int(v)
+
+        def to_cell_f(v):
+            return "" if (v is None or v == 0.0) else float(v)
+
+        rows = []
+        for _, r in raw.iterrows():
+            date_str = str(r["日付"]).strip()
+
+            def g(col): return r.get(col, None)
+
+            sou_calc = nci(g("計"))
+            frex_h   = nc(g("frex"))
+            fresh_h  = nc(g("fresh"))
+            other_h  = nc(g("他"))
+
+            if any(v is not None for v in [frex_h, fresh_h, other_h]):
+                total_h = (frex_h or 0.0) + (fresh_h or 0.0) + (other_h or 0.0)
+            else:
+                total_h = None
+
+            jikyu    = nci(g("時給"))
+            clients  = {c: nci(g(c)) for c in CLIENT_COLS_2025}
+            sevennow = nci(g("7now"))
+
+            row = {
+                "日付":    date_str,
+                "合計売上": to_cell_i(sou_calc),
+                "合計h":   to_cell_f(total_h),
+                "frex h":  to_cell_f(frex_h),
+                "fresh h": to_cell_f(fresh_h),
+                "他 h":    to_cell_f(other_h),
+                "合計時給": to_cell_i(jikyu),
+                "5h+":    "",
+                "警告":    "",
+                **{c: to_cell_i(clients[c]) for c in CLIENT_COLS_2025},
+                "R":      "",   # 2025年CSVには存在しない
+                "メモ":    "",
+            }
+            rows.append(row)
+
+        if rows:
+            dfs.append(pd.DataFrame(rows))
+
+    if not dfs:
+        return pd.DataFrame()
+
+    combined = pd.concat(dfs, ignore_index=True)
+    combined["_sort"] = pd.to_datetime(combined["日付"], format="%Y/%m/%d", errors="coerce")
+    combined = combined.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+
+    # 列順を既存スキーマ（COLUMNS）に合わせる
+    for c in COLUMNS:
+        if c not in combined.columns:
+            combined[c] = ""
+    combined = combined[COLUMNS]
+
+    return combined
 
 def build_month_report_simple(df: pd.DataFrame, month_str: str) -> str:
     tmp = df.copy()
-    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce", format="mixed")
     tmp = tmp.dropna(subset=["日付"])
     tmp["月"] = tmp["日付"].dt.to_period("M").astype(str)
     tmp = tmp[tmp["月"] == month_str].copy()
@@ -813,7 +913,7 @@ def build_month_report_simple(df: pd.DataFrame, month_str: str) -> str:
 
 def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     tmp = df.copy()
-    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce", format="mixed")
     tmp = tmp.dropna(subset=["日付"])
     tmp["月"] = tmp["日付"].dt.to_period("M").astype(str)
     tmp = tmp[tmp["月"] == month_str].copy()
@@ -1091,7 +1191,7 @@ def calc_month_pace(df: pd.DataFrame, month_str: str, month_target: int = 400000
     - show: 当月だけ表示
     """
     tmp = df.copy()
-    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce", format="mixed")
     tmp = tmp.dropna(subset=["日付"])
     tmp["月"] = tmp["日付"].dt.to_period("M").astype(str)
     tmp = tmp[tmp["月"] == month_str].copy()
@@ -1128,7 +1228,7 @@ def calc_month_pace(df: pd.DataFrame, month_str: str, month_target: int = 400000
 
 def build_year_report_full(df: pd.DataFrame, year: int) -> str:
     tmp = df.copy()
-    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce")
+    tmp["日付"] = pd.to_datetime(tmp["日付"], errors="coerce", format="mixed")
     tmp = tmp.dropna(subset=["日付"])
     tmp = tmp[tmp["日付"].dt.year == year].copy()
 
@@ -1289,17 +1389,70 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
 
     return "\n".join(lines)
 
+
+st.subheader("レポ生成（月次レポ）")
+
+st.subheader("2025年CSV読み込み")
+st.caption("CSVをアップロードすると対象月・対象年に2025年分が追加されます。")
+
+if "df_2025" not in st.session_state:
+    # 起動時に2025_all.csvを自動読み込み
+    _csv_path = os.path.join(os.path.dirname(__file__), "2025_all.csv")
+    if os.path.exists(_csv_path):
+        import io as _io
+        with open(_csv_path, "rb") as _f:
+            _files = [_io.BytesIO(_f.read())]
+            _files[0].name = "2025_all.csv"
+        _auto = parse_2025_csv(_files)
+        st.session_state["df_2025"] = _auto if not _auto.empty else pd.DataFrame()
+    else:
+        st.session_state["df_2025"] = pd.DataFrame()
+if "csv_2025_ver" not in st.session_state:
+    st.session_state["csv_2025_ver"] = 0
+
+files_2025 = st.file_uploader(
+    "2025年CSVを選択（複数可・最大12ファイル）",
+    type=["csv"],
+    accept_multiple_files=True,
+    key=f"csv_2025_upload_{st.session_state['csv_2025_ver']}",
+)
+
+if files_2025:
+    with st.spinner("CSVを変換中..."):
+        parsed = parse_2025_csv(files_2025)
+    if parsed.empty:
+        st.error("有効なデータが見つかりませんでした。")
+    else:
+        st.session_state["df_2025"] = parsed
+        dates_2025 = pd.to_datetime(parsed["日付"], errors="coerce")
+        st.success(f"読み込み完了: {len(parsed)} 行 / 期間: {str(dates_2025.min().date())} 〜 {str(dates_2025.max().date())}")
+
+df_2025_loaded = st.session_state.get("df_2025", pd.DataFrame())
+st.write(f"DEBUG: df_2025_loaded rows={len(df_2025_loaded)}")
+if not df_2025_loaded.empty:
+    df_merged = pd.concat([df, df_2025_loaded], ignore_index=True)
+    df_merged["_sort"] = pd.to_datetime(df_merged["日付"], errors="coerce")
+    df_merged = df_merged.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+else:
+    df_merged = df
+
 months = []
-if not df.empty:
-    dtmp = df.copy()
-    dtmp["日付"] = pd.to_datetime(dtmp["日付"], errors="coerce")
-    months = sorted(dtmp.dropna(subset=["日付"])["日付"].dt.to_period("M").astype(str).unique().tolist())
+if not df_merged.empty:
+    dtmp = df_merged.copy()
+    dtmp["日付"] = pd.to_datetime(dtmp["日付"], errors="coerce", format="mixed")
+    months = sorted(dtmp.dropna(subset=["日付"])["日付"].dt.to_period("M").astype(str).unique().tolist(), reverse=True)
+st.write(f"DEBUG months: {months}")
+st.write(f"DEBUG df_merged rows: {len(df_merged)}, df rows: {len(df)}, df_2025 rows: {len(df_2025_loaded)}")
+sample = df_merged["日付"].head(10).tolist()
+st.write(f"DEBUG 日付サンプル: {sample}")
+st.write(f"DEBUG 2025列名: {list(df_2025_loaded.columns)}")
+st.write(f"DEBUG 2025日付サンプル: {df_2025_loaded.iloc[:,0].head(5).tolist()}")
 
 years = []
-if not df.empty:
-    ytmp = df.copy()
-    ytmp["日付"] = pd.to_datetime(ytmp["日付"], errors="coerce")
-    years = sorted(ytmp.dropna(subset=["日付"])["日付"].dt.year.unique().tolist())
+if not df_merged.empty:
+    ytmp = df_merged.copy()
+    ytmp["日付"] = pd.to_datetime(ytmp["日付"], errors="coerce", format="mixed")
+    years = sorted(ytmp.dropna(subset=["日付"])["日付"].dt.year.unique().tolist(), reverse=True)
 
 cL, cR = st.columns(2)
 
@@ -1317,13 +1470,13 @@ with cR:
     gen_y = st.button("年次レポ生成")
 
 if gen_m and month_str:
-    rep = build_month_report_full(df, month_str)
+    rep = build_month_report_full(df_merged, month_str)
     st.session_state["report_text"] = rep
     st.session_state["pace_info"] = calc_month_pace(df, month_str, month_target=400000)
     st.session_state["report_kind"] = "month"
 
 if gen_y:
-    rep = build_year_report_full(df, int(sel_year))
+    rep = build_year_report_full(df_merged, int(sel_year))
     st.session_state["report_text"] = rep
     st.session_state["pace_info"] = None  # 年次ではペース判定は出さない
     st.session_state["report_kind"] = "year"
@@ -1358,3 +1511,4 @@ if report_text:
     """, unsafe_allow_html=True)
 
     st.code(report_text, language="text")
+
