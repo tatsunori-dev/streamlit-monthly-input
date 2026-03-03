@@ -21,7 +21,22 @@ TABLE = "records"
 # ここにUIは置かない（関数定義がまだ）
 
 # 取引先（売上）
-CLIENT_COLS = ["U", "出", "R", "W", "menu", "しょんぴ", "Afrex", "Afresh", "ハコベル", "pickg", "その他"]
+CLIENT_COLS = ["U", "出", "R", "CW", "menu", "しょんぴ", "Afrex", "Afresh", "ハコベル", "pickg", "その他"]
+
+MONTH_TARGETS = {
+    1:  448000,
+    2:  405000,
+    3:  420000,
+    4:  420000,
+    5:  400000,
+    6:  400000,
+    7:  410000,
+    8:  400000,
+    9:  400000,
+    10: 460000,
+    11: 447000,
+    12: 390000,
+}
 
 # スキーマ（並び保証）
 COLUMNS = [
@@ -416,8 +431,8 @@ div[data-baseweb="button"] button { white-space: nowrap; }
 )
 
 # 2段に分割（Afrex以降を下段）
-CLIENT_ROW1 = ["U", "出", "R", "W", "menu", "しょんぴ"]
-CLIENT_ROW2 = ["Afrex","Afresh", "ハコベル", "pickg", "その他"]
+CLIENT_ROW1 = ["U", "出", "R", "menu", "しょんぴ", "CW"]
+CLIENT_ROW2 = ["Afrex", "Afresh", "ハコベル", "pickg", "その他"]
 
 # 初期化（ウィジェット生成前）
 if "client_sel_row1" not in st.session_state:
@@ -660,7 +675,7 @@ else:
 # -----------------------------
 # 2025年CSV専用の取引先（R は存在しない）
 # -----------------------------
-CLIENT_COLS_2025 = ["U", "出", "W", "menu", "しょんぴ", "Afrex", "Afresh", "ハコベル", "pickg", "その他"]
+CLIENT_COLS_2025 = ["U", "出", "CW", "menu", "しょんぴ", "Afrex", "Afresh", "ハコベル", "pickg", "その他"]
 
 # -----------------------------
 # 2025年CSV → 既存スキーマに変換
@@ -796,7 +811,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
         tmp[c] = pd.to_numeric(tmp[c], errors="coerce").fillna(0)
 
     # 月合計
-    MONTH_TARGET = 400000
+    MONTH_TARGET = MONTH_TARGETS.get(int(month_str.split("-")[1]), 400000)
     sum_sales = int(tmp["合計売上_num"].sum())
     sum_h = float(tmp["合計h_num"].sum())
     hourly = int(sum_sales / sum_h) if sum_h > 0 else 0
@@ -870,7 +885,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
         lines.append("（未来月のため、実績系は当月開始後に表示）")
         lines.append("")
         lines.append("【目標】")
-        lines.append("月目標: 400,000円")
+        lines.append(f"月目標: {MONTH_TARGET:,}円")
         if season == "冬":
             lines.append("季節: 冬（12〜3月）")
             lines.append("・平均日給（5h+）目標: 20,000円")
@@ -911,12 +926,12 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
     # -----------------------------
     # 月40万：目標/残り日数/プラン（残り7日以下で予定表を出す）
     # -----------------------------
-    MONTH_TARGET = 400000  # 月40万（ここだけ触ればOK）
+    MONTH_TARGET = MONTH_TARGETS.get(int(month_str.split("-")[1]), 400000)
 
     today = date.today()
 
     remain_sales = max(0, MONTH_TARGET - sum_sales)
-    ok_mark = "✅" if sum_sales >= MONTH_TARGET else "❌"
+    ok_mark = "✅" if sum_sales >= MONTH_TARGET else "🔄"
 
     if is_current_month:
         # 対象月の月末日（今月のときだけ必要）
@@ -936,7 +951,7 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
         # ---- 表示（今月だけ）----
         lines.append("")
         lines.append("【月間目標進捗】")
-        lines.append(f"月40万: {ok_mark}（{sum_sales:,}円 / あと{remain_sales:,}円）")
+        lines.append(f"月目標 {MONTH_TARGET:,}円: {ok_mark}（{sum_sales:,}円 / あと{remain_sales:,}円）")
 
         if remain_days > 0:
             lines.append(f"月末まで残り: {remain_days}日（明日から） / 1日あたり必要: {per_day_need:,}円")
@@ -1076,7 +1091,7 @@ def calc_month_pace(df: pd.DataFrame, month_str: str, month_target: int = 400000
     last_day = calendar.monthrange(y, mo)[1]
     day_idx = max(1, min(today.day, last_day))
 
-    ideal_cum = int(month_target * (day_idx / last_day))
+    ideal_cum = int(month_target * (day_idx / last_day))  # month_targetは月別目標
     diff = actual - ideal_cum
     ok = actual >= ideal_cum
 
@@ -1203,15 +1218,48 @@ def build_year_report_full(df: pd.DataFrame, year: int) -> str:
 
     lines.append("")
     lines.append("【月別サマリ（売上/時間/時給/稼働日数/稼働日平均h）】")
+    
+    today = date.today()
+    year_total_target = sum(MONTH_TARGETS.values())
+    achieved_months = 0
+    total_achieved = 0
+    
     for _, r in g.sort_values("月").iterrows():
+        mo = int(r["月"].split("-")[1])
+        target = MONTH_TARGETS.get(mo, 400000)
+        sales = int(r["sales"])
+        
+        # 未来月はスキップ
+        y_r, m_r = map(int, r["月"].split("-"))
+        is_future = (y_r, m_r) > (today.year, today.month)
+        is_current = (y_r == today.year) and (m_r == today.month)
+        
+        if is_future:
+            mark = "（未来）"
+        elif is_current:
+            mark = "🔄" if sales < target else "✅"
+        else:
+            mark = "✅" if sales >= target else "❌"
+            if sales >= target:
+                achieved_months += 1
+            total_achieved += sales
+
         lines.append(
-            f"{r['月']}: "
-            f"売上 {int(r['sales']):,} 円 / "
+            f"{r['月']}: {mark} "
+            f"目標 {target:,} / 売上 {sales:,} 円 / "
             f"時間 {float(r['hours']):g} h / "
             f"時給 {int(r['hourly']):,} 円 / "
             f"稼働 {int(r['work_days'])} 日 / "
             f"稼働日平均 {float(r['avg_workday_h']):.2f} h"
         )
+    
+    # 年間目標達成状況
+    past_months = g[g["月"].apply(lambda m: (int(m.split("-")[0]), int(m.split("-")[1])) <= (today.year, today.month))]
+    past_count = len(past_months)
+    lines.append("")
+    lines.append(f"【年間目標達成状況】")
+    lines.append(f"年間目標: {year_total_target:,} 円 / 実績: {sum_sales:,} 円（{sum_sales/year_total_target*100:.1f}%）")
+    lines.append(f"月別達成: {achieved_months} / {past_count} ヶ月 ✅")
 
     lines.append("")
     lines.append("【稼働時間（年間）】")
@@ -1308,7 +1356,8 @@ with cR:
 if gen_m and month_str:
     rep = build_month_report_full(df_merged, month_str)
     st.session_state["report_text"] = rep
-    st.session_state["pace_info"] = calc_month_pace(df, month_str, month_target=400000)
+    _m = int(month_str.split("-")[1])
+    st.session_state["pace_info"] = calc_month_pace(df_merged, month_str, month_target=MONTH_TARGETS.get(_m, 400000))
     st.session_state["report_kind"] = "month"
 
 if gen_y:
@@ -1325,7 +1374,7 @@ if report_text:
     # 月間目標進捗（ペース判定：当月のみ）
     if report_kind == "month" and isinstance(pace_info, dict) and pace_info.get("show"):
         st.subheader("月間目標進捗")
-        mark = "⭕️" if pace_info["ok"] else "❌"
+        mark = "⭕️" if pace_info["ok"] else "🔄"
         diff = pace_info["diff"]
         sign = "+" if diff >= 0 else ""
         msg = (
