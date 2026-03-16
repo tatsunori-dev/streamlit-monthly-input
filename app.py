@@ -960,20 +960,6 @@ def build_month_report_full(df: pd.DataFrame, month_str: str) -> str:
 
         lines.append(f"5h+換算で必要: {need_5h_days}日（平均日給 {plan_daily:,}円ベース）")
 
-        # 月末プラン（最大7日表示）
-        show_days = min(7, remain_days)
-        if show_days > 0:
-            lines.append("")
-            lines.append("【月末プラン（予定表）】")
-            lines.append(f"方針: 残り{remain_days}日のうち {need_5h_days}日を「5h+確保」(前倒し)")
-
-            for i in range(1, show_days + 1):
-                d = today + timedelta(days=i)
-                mark = "5h+確保" if i <= need_5h_days else "軽め/休み"
-                note = f"（目安 {plan_daily:,}円）" if i <= need_5h_days else ""
-                wd = "月火水木金土日"[d.weekday()]
-                lines.append(f"{d.isoformat()}({wd}) : {mark}{note}")
-
         # ↓ lines.append で表示
     else:
         # 今月じゃないなら表示しない（＝残り日数/予定表セクションを丸ごとスキップ）
