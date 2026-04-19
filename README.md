@@ -1,92 +1,81 @@
-# streamlit-monthly-input
+# 📊 streamlit-monthly-input（日次売上・月次レポアプリ）
 
-軽貨物ドライバーの **日次売上・稼働時間の記録〜月次レポ作成** を自動化する、Streamlit製の業務支援アプリです。  
-日々の入力データを **Supabase(Postgres)** に保存し、月単位で集計して **売上 / 稼働時間 / 時給 / 各種指標** を即時に可視化します。
+> 🚛 軽貨物ドライバー向けに開発した、**実業務で毎日使用中**の業務支援アプリです。
 
-## 解決する課題
-- 日報がメモやスプレッドシートに散らばり、月末の集計に時間がかかる
-- 入力ミスや転記漏れで数値がズレる（時給計算や月次合計の再計算が発生）
-- バックアップ/復元の手段がなく、運用が不安
+日々の売上・稼働時間を入力するだけで、**月次レポートを自動生成**。  
+データはクラウド（Supabase）に保存され、どこからでもアクセスできます。
 
-## 期待できる効果
-- 日次入力だけで月次集計が自動化され、**月末作業を短縮**
-- データはDBに一元管理、CSVの **バックアップ/復元** にも対応
-- ログイン機能つきで、簡易的な社内運用にも使える
+---
 
-## 対象ユーザー
-- 軽貨物ドライバー / フリーランス配送員 / 個人事業主など、日次売上と稼働時間を管理したい小規模事業者
+## 😓 こんな課題を解決しました
 
-## 主な入力項目
-- 日付
-- 売上（金額・取引先別内訳）
-- 稼働時間（合計 / frex / fresh / その他）
-- メモ（任意）
+- 日報がメモ帳やスプレッドシートに散らばり、**月末集計に時間がかかる**
+- 手作業による転記ミス・集計ズレが発生していた
+- 時給・目標達成率など「経営判断に使える指標」がすぐに見えない
+- バックアップ手段がなく、データ消失リスクがあった
 
-## 導入手順（最短3ステップ）
-1. Railway上にデプロイ、またはローカルでアプリを起動
-2. 管理者アカウントでログイン
-3. 日次の売上・稼働時間を入力して保存
+---
 
-## できること
-- ログイン（APP_USERNAME / APP_PASSWORD）
-- 日次入力 → 保存（同日なら上書き）
-- 月切り替え表示
-- CSVエクスポート（表示中の月 / 全データ）
-- CSVインポート（復元）
-- チェックした行を削除
-- 月次レポ生成（売上/時間/時給 + 各種指標）
+## 🚀 主な機能
 
-## Screenshots
+- 🔐 ログイン認証（環境変数による簡易認証）
+- 📝 日次入力・保存（同日上書き対応）
+- 📅 月切り替え表示
+- 📈 月次レポ自動生成
+  - 売上 / 稼働時間 / 時給 / 各種指標
+  - 月間目標進捗・残額・必要日給の自動算出
+  - 日別 TOP / WORST 分析
+- 💾 CSV バックアップ / 復元（全データ・月別）
+- 🗑️ チェックした行を個別削除
 
-### 1) ログイン
-![Login](images/01_login.png)
+---
 
-### 2) 日付・時間入力
-![Input](images/02_input.png)
+## 🛠 技術構成
 
-### 3) データ一覧（DB）＋CSV
-![DB](images/03_db.png)
+| 項目 | 内容 |
+|------|------|
+| 言語 / UI | Python 3.12 / Streamlit |
+| DB | Supabase（PostgreSQL）|
+| ホスティング | Streamlit Community Cloud（デプロイ済み）|
+| 認証 | 独自簡易認証（環境変数管理）|
+| データ処理 | pandas / psycopg2 |
+| バージョン管理 | Git / GitHub |
 
-### 4) 月次レポ生成
-![Report](images/04_report.png)
+---
 
-## ローカル起動
-```bash
-cd ~/Desktop/python_practice
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+## 📸 Screenshots
 
-# ローカルはログイン無し（開発用）
-DEV_NO_AUTH=1 streamlit run app.py
-```
+### 🔐 ログイン
+<img src="images/01_login.png" width="600">
 
-## Deploy（Streamlit Community Cloud）
-- https://monthly-input-app.streamlit.app
+### 📝 日次入力
+<img src="images/02_input.png" width="600">
 
-## 環境変数（Streamlit Secrets）
-必須：
-- SUPABASE_DB_URL
-- APP_USERNAME
-- APP_PASSWORD
+### 📋 データ一覧
+<img src="images/03_db.png" width="600">
 
-任意（ローカル開発用）：
-- DEV_NO_AUTH=1
+### 📈 月次レポ
+<img src="images/04_report.png" width="600">
 
-## 構成（ざっくり）
-Browser → Streamlit（Streamlit Community Cloud）→ Supabase Postgres
+---
 
-## バックアップ運用（おすすめ）
-- 月1回「全データCSV」をダウンロードして保管
-- 必要ならCSVインポートで復元
+## 🎯 一言アピール
 
-## 技術スタック
+「月末の集計作業をゼロにしたい」という自分自身の課題から生まれたアプリ。  
+毎日の入力だけで **売上・時給・目標進捗がリアルタイムで可視化** され、  
+軽貨物ドライバーとしての経営判断を数値ベースで行えるようになりました。  
+**業務で毎日使い続けながら改善を重ねた、実践ベースのプロダクトです。**
 
-- Frontend / UI: Streamlit
-- Backend: Python 3.12
-- Database: Supabase（PostgreSQL）
-- ORM / Driver: psycopg2
-- Data Processing: pandas
-- Hosting  Streamlit Community Cloud
-- Auth: 独自簡易認証（環境変数 / secrets管理）
-- Version Control: Git / GitHub
+---
+
+## 👤 Author
+
+たつのり（TEMC）  
+軽貨物ドライバー / 個人開発  
+🔗 [ここなら](https://coconala.com/users/5901606) ／ [クラウドワークス](https://crowdworks.jp/public/employees/4545609)
+
+---
+
+## 📄 License
+
+This project is for personal and portfolio use.
